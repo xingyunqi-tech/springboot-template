@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>tech.xingyunqi.template</groupId>
+        <artifactId>springboot-template</artifactId>
+        <version>${revision}</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>template-common</artifactId>
+    <packaging>pom</packaging>
+
+    <modules>
+        <module>template-common-core</module>
+        <module>template-common-json</module>
+        <module>template-common-web</module>
+        <module>template-common-redis</module>
+        <module>template-common-mybatis</module>
+        <module>template-common-security</module>
+        <module>template-common-oss</module>
+        <module>template-common-mail</module>
+        <module>template-common-observability</module>
+    </modules>
+</project>

@@ -1,0 +1,57 @@
+default_install_hook_types: [pre-commit, commit-msg, pre-push]
+default_stages: [pre-commit]
+
+repos:
+  - repo: builtin
+    hooks:
+      - id: check-added-large-files
+        exclude: ^(openapi/|tests/contract/fixtures/)
+      - id: check-yaml
+        args: [--allow-multiple-documents]
+      - id: check-json
+      - id: check-xml
+      - id: end-of-file-fixer
+        exclude: ^openapi/
+      - id: trailing-whitespace
+        exclude: ^openapi/
+
+  - repo: local
+    hooks:
+      - id: gitleaks
+        name: gitleaks
+        language: docker_image
+        entry: zricethezav/gitleaks:v8.30.1 git --pre-commit --staged --redact --no-banner
+        pass_filenames: false
+
+      - id: spotless
+        name: spotless apply
+        entry: scripts/spotless-apply.sh
+        language: script
+        files: (\.(java|md|ya?ml|json5|properties|mustache)|pom\.xml|config/.+\.xml|Makefile|\.editorconfig)$
+
+      - id: typos
+        name: typos
+        entry: typos --force-exclude
+        language: python
+        additional_dependencies: [typos==1.52.2]
+        types: [text]
+
+      - id: comment-history-words
+        name: 注释不写变更历史
+        language: pygrep
+        entry: ((^|\s)//|/\*|^\s*\*).*(原来|之前|现在改|不再|已修复|回归|新增了|移除了)
+        types: [java]
+
+      - id: commit-msg
+        name: conventional commits
+        entry: scripts/check-commit-msg.sh
+        language: script
+        stages: [commit-msg]
+
+      - id: make-check
+        name: make check
+        entry: make check
+        language: system
+        stages: [pre-push]
+        pass_filenames: false
+        always_run: true

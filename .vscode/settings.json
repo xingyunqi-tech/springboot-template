@@ -1,0 +1,13 @@
+{
+  "java.configuration.updateBuildConfiguration": "automatic",
+  "java.compile.nullAnalysis.mode": "automatic",
+  "java.format.enabled": false,
+  "java.saveActions.organizeImports": false,
+  "[java]": {
+    "editor.formatOnSave": false
+  },
+  "files.exclude": {
+    "**/target": true,
+    "**/.flattened-pom.xml": true
+  }
+}

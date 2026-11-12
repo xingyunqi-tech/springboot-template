@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<!DOCTYPE module PUBLIC "-//Checkstyle//DTD Checkstyle Configuration 1.3//EN" "https://checkstyle.org/dtds/configuration_1_3.dtd">
+<module name="Checker">
+    <property name="charset" value="UTF-8"/>
+    <property name="severity" value="error"/>
+    <property name="fileExtensions" value="java"/>
+
+    <module name="BeforeExecutionExclusionFileFilter">
+        <property name="fileNamePattern" value=".*[\\/]target[\\/].*"/>
+    </module>
+
+    <module name="TreeWalker">
+        <module name="TodoComment">
+            <property name="format" value="(原来|之前|现在改|不再|已修复|回归|新增了|移除了)"/>
+            <message key="todo.match" value="注释只描述当前代码，不写变更历史（命中：{0}）"/>
+        </module>
+        <module name="RegexpSinglelineJava">
+            <property name="format" value="@DisplayName\(.*(回归|防止|修复|[Rr]egression)"/>
+            <property name="message" value="测试名只陈述行为，不写「回归 / 防止 / 修复」"/>
+        </module>
+        <module name="RegexpSinglelineJava">
+            <property name="format" value="\bvoid\s+[^\s(]*(回归|防止|修复|[Rr]egression)[^\s(]*\s*\("/>
+            <property name="ignoreComments" value="true"/>
+            <property name="message" value="测试名只陈述行为，不写「回归 / 防止 / 修复」"/>
+        </module>
+    </module>
+</module>

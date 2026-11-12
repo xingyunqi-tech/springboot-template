@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>tech.xingyunqi.template</groupId>
+        <artifactId>template-common</artifactId>
+        <version>${revision}</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>template-common-security</artifactId>
+    <description>Spring Security、JWT、路由鉴权与权限注解、密码哈希</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>tech.xingyunqi.template</groupId>
+            <artifactId>template-common-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>tech.xingyunqi.template</groupId>
+            <artifactId>template-common-web</artifactId>
+        </dependency>
+    </dependencies>
+</project>
