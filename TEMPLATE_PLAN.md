@@ -182,9 +182,9 @@ springboot-template/
 │   ├── scope.yaml                       # 本期实现的 operationId 白名单（只用于代码生成与契约测试）
 │   └── codegen-overlay.yaml             # 只作用于 codegen 输入：响应字段可空 / 非必填修正、schemaMappings 登记
 ├── db/nestjs-schema.sql                 # 共享产物：nestjs 迁移后的规范化结构快照（每个对象一行，§7）
-├── docker/                              # 含共享的 nestjs.compose.yaml（§4.3）
+├── docker/                              # compose 分环境文件
 ├── deploy/
-├── scripts/                             # 含共享的 openapi-sync.sh、schema_snapshot.py、gen_validation_cases.py、nestjs/validation-cases.ts
+├── scripts/                             # 含共享的 openapi-sync.sh、schema_snapshot.py、gen_validation_cases.py、gen_nest_handlers.py、nestjs/{validation-cases.ts,nestjs.compose.yaml}
 ├── .github/{workflows, renovate.json5, zizmor.yml, ISSUE_TEMPLATE}
 ├── Dockerfile  .dockerignore  .env.example  .editorconfig  .gitattributes
 ├── .vscode/{settings,extensions}.json
@@ -285,8 +285,9 @@ Java 侧捕获 `DuplicateKeyException`，从 `PSQLException.getServerErrorMessag
 | 计数主体 | 路由声明 `@AuthenticatedOnly`（对应 nestjs `AuthGuard('jwt')`）且 `Authorization` 为 `Bearer <token>`、令牌用 `AUTH_JWT_SECRET` 验签且未过期时为 `user:{id}`（只验签，不查会话）；其余情况（含可选鉴权、refresh、监控令牌路由，令牌无效或过期）为 `ip:{normalizeIp(ip)}` |
 | `normalizeIp` | IPv4 原样；去掉 IPv6 zone（`%eth0`）；`::1` 原样；IPv4 映射地址（`::ffff:a.b.c.d`）转为 IPv4；其余 IPv6 按 /64 取网络地址，输出小写 RFC 5952 压缩形式加前缀（`2001:db8:abcd:12:1:2:3:4` → `2001:db8:abcd:12::/64`；`Inet6Address.getHostAddress()` 不压缩零段，需自写格式化）；非法字符串原样。用例照搬 fastapi-temp `tests/unit/test_observability.py::TestNormalizeIp` |
 | 响应头 | 放行时写入 `X-RateLimit-Limit`（本条规则的 limit）、`X-RateLimit-Remaining`、`X-RateLimit-Reset`（秒，整数），之后鉴权 / 校验失败的 401 / 403 / 422 响应同样带这三个头；超限 429 只带 `Retry-After`（秒，整数），不带 `X-RateLimit-*`；body `{code: 429, message: common.tooManyRequests 译文, data: null}` |
-| Redis 键 | `throttle:` + `sha256hex("<Controller>-<handler>-default-<tracker>")` + `:default`（nestjs 另有 `…:default:block` 封禁键）；本服务的 GCRA 状态写在该键加后缀的 `throttle:<sha>:default:gcra`，不写 nestjs 的 `INCR` 计数键（否则 nestjs 对它 `INCR` 报错而降级或误封），共用 Redis 时两边各自计数。`<Controller>-<handler>` 是 nestjs 的类名与方法名，按 operationId 查表：读取共享产物 `openapi/nest_handlers.json`（如 `loginWithEmail` → `AuthController-login`、`healthCheck` → `HealthController-check`、指标端点 → `MetricsController-index`、`GET files/:path` → `FilesLocalController-download`），表外路由回落为 operationId |
+| Redis 键 | `throttle:` + `sha256hex("<Controller>-<handler>-default-<tracker>")` + `:default`（nestjs 另有 `…:default:block` 封禁键）；本服务的 GCRA 状态写在该键加后缀的 `throttle:<sha>:default:gcra`，不写 nestjs 的 `INCR` 计数键（否则 nestjs 对它 `INCR` 报错而降级或误封）；共用 Redis 时 Python、Go、Java 三个 GCRA 后端共用 `:gcra` 键、共同计数，nestjs 用固定窗口键、单独计数。`<Controller>-<handler>` 是 nestjs 的类名与方法名，按 operationId 查表：读取共享产物 `openapi/nest_handlers.json`（如 `loginWithEmail` → `AuthController-login`、`healthCheck` → `HealthController-check`、指标端点 → `MetricsController-index`、`GET files/:path` → `FilesLocalController-download`），表外路由回落为 operationId |
 | Redis 故障 | 单条命令超时 500ms；出错时本次改用进程内计数，每次回落 `throttler_storage_fallback_total` +1；首次降级记 error 日志并告警（type `throttler`、level CRITICAL、dedupKey `throttler-storage-fallback`），恢复时记 info 日志；`REDIS_ENABLED=false` 时直接用进程内计数 |
+| GCRA 计算 | 全程用整数微秒：Lua 中 `now = TIME[1] × 1000000 + TIME[2]`（约 1.8e15，小于 2^53，在 Lua 5.1 的 double 中仍是精确整数），进程内回落实现用 `long` 微秒；`period = ttl × 1000000`、`interval = period / limit` 向下取整到整数微秒（误差每次不足 1µs，`limit` 次请求占用不超过 `period`，不会多拒），`period` 与 `interval` 由 Java 算好后作为整数参数传入脚本。Redis 中 TAT 的存储单位与 fastapi-temp（`src/app/infrastructure/throttler/storage.py`）一致，三个后端共用同一个键，单位不同会让对方把 TAT 读成约 1000 倍：写入为「毫秒、最多 3 位小数」的十进制字符串（微秒 / 1000，如 `268382706.344`；Lua 中 `string.format('%.3f', tat / 1000)`）；读取时把十进制毫秒字符串四舍五入到整数微秒（fastapi 写入的值可能超过 3 位小数，如 `268382706.34399077`；Lua 中 `math.floor(tonumber(v) * 1000 + 0.5)`）；过期时间统一为 `PX ceil(TAT − now)`（毫秒，向上取整，与 fastapi-temp / go-template 相同）。判定 `wait = (max(tat, now) + interval) − period − now`，`wait > 0` 才拒绝，`Retry-After = ceil(wait / 1000000)` 秒；放行时 `X-RateLimit-Reset` 同样向上取整到秒。不能写成 `allowAt = (tat + interval) − period` 再比较 `allowAt > now`：用浮点毫秒时 `(now + period) − period` 可能因舍入略大于 `now`，`limit=1` 时全新键的第一个请求被误判为 429（fastapi-temp be36777 修复的问题，反例 `now = 268382706.34399077` ms、`period = 60000`、`limit = 1`）。不引入 Bucket4j 等库；若 M3 改用现成库，须确认键仍为 `throttle:<sha>:default:gcra`、响应头符合上方规则。单元测试：`limit=1` 的全新键第一个请求放行；上述反例 `now` 作为固定用例（换算为微秒后，内存实现与 Lua 脚本各跑一遍）；读取 fastapi 格式的 TAT 字符串（如 `268382706.34399077`）后判定正确，写回的值为 3 位小数毫秒串 |
 
 **Java 侧实现**
 
@@ -337,7 +338,7 @@ openapi-generator 7.27.0 的 `spring` 生成器提供 `useSpringBoot4`、`useJac
 
 **流水线**（`tools/openapi-tools` 为普通 Java 程序，构建期由 exec-maven-plugin 调用，无网络依赖）：
 
-1. **`make openapi-sync`**：写入下方「共享产物」全部文件（默认从同级 fastapi-temp 复制，或重跑共享脚本），一起提交
+1. **`make openapi-sync`**：执行共享脚本 `scripts/openapi-sync.sh`，在 nestjs 固定提交上重新导出下方「共享产物」全部文件，一起提交；`make openapi-copy` 从同级 fastapi-temp 复制同一批文件（不重跑）
 2. **服务**：`GET /docs-json` 返回 classpath 上的 `nestjs-baseline.json` **完整原文，逐字节一致**（`application/json`，不经过 Jackson 重新序列化）；`/docs` 用 Scalar 静态页指向 `/docs-json`；`SWAGGER_ENABLED` 控制，生产默认关闭
 3. `openapi/scope.yaml`：本期实现的 operationId 白名单，**只用于代码生成与契约测试**，不影响 `/docs-json`
 4. **叠加** → `target/openapi/codegen.json`（只用于代码生成，不对外输出）：应用 `codegen-overlay.yaml`：对响应 DTO 中实际可空的字段补 `nullable: true`、对不总是输出的字段移出 `required`；`@JsonInclude` 用原生 `x-jackson-json-include-policy`。请求校验不经过生成注解（见下「校验」）
@@ -364,11 +365,11 @@ openapi-generator 7.27.0 的 `spring` 生成器提供 `useSpringBoot4`、`useJac
 | `openapi/SOURCE` | 五行 `key=value`：`repository=xingyunqi-tech/nestjs-template`、`branch=release/exam-prep`、`commit=<契约提交，当前 02fdb4d…>`、`validation_script=<export-validation.ts 所在提交，当前 8b5f296…>`、`environment=NODE_ENV=development FILE_DRIVER=local` | `openapi-sync` |
 | `db/nestjs-schema.sql` | nestjs 迁移后、§7 所列 18 张表的规范化结构快照：每个列 / 约束 / 索引 / 注释一行（`column t.c <type> NULL\|NOT NULL [DEFAULT …] [COMMENT …]`、`constraint t.name <def>`、`index t.name <def>`、`comment t '…'`），排序后输出 | fastapi-temp `scripts/schema_snapshot.py`（查询 `pg_catalog`，不用 `pg_dump`） |
 | `tests/contract/fixtures/validation-cases.json` | 约 4516 条校验用例（`{id, dto, payload, expected}`，`expected` 为 `{ok: true, value}` 或 `{ok: false, status, errors}`），期望结果由真实 class-validator / class-transformer 跑出（nestjs oracle） | fastapi-temp `scripts/gen_validation_cases.py` 生成输入，`scripts/nestjs/validation-cases.ts` 在 nestjs builder 镜像中执行 |
-| `docker/nestjs.compose.yaml` | nestjs 参照服务（compose project `nestjs-openapi-sync`，postgres 17.11 / redis 7.4.12 / mailpit，api 映射宿主 `NESTJS_PORT`，默认 3001；迁移 → `ENV_MODE=dev` seed → 启动） | fastapi-temp |
+| `scripts/nestjs/nestjs.compose.yaml` | nestjs 参照服务（compose project 默认 `nestjs-openapi-sync-<仓库目录名>`，可用 `NESTJS_SYNC_PROJECT` 覆盖；postgres 17.11 / redis 7.4.12 / mailpit，api 映射宿主 `NESTJS_PORT`，默认 3001，端口被占用时 `openapi-sync.sh` 报错退出；迁移 → `ENV_MODE=dev` seed → 启动） | fastapi-temp |
 | `openapi/nest_handlers.json` | operationId → nestjs `<Controller>-<handler>` 映射（221 条；`uploadFile` 不在表内，运行时按 `FILE_DRIVER` 对应 `FilesLocalController` / `FilesS3Controller` / `FilesS3PresignedController`），用于限流键（§4.1「限流细则」） | `scripts/gen_nest_handlers.py`，由 `openapi-sync` 调用 |
 | `tests/parity` 用例 | 用例清单（请求、比对规则）与 fastapi-temp `tests/parity`（`test_global_contract.py`、`test_auth_parity.py`）一一对应，用例 id 相同；目标地址 nestjs 默认 3001、本服务默认 3000 | fastapi-temp 为基准，各仓库逐条移植，不共用数据文件（§13 第 18 项） |
 
-归属：契约内容的唯一来源是 nestjs（`02fdb4d` 契约提交 + `export-validation.ts`）；生成工具（`scripts/openapi-sync.sh`、`scripts/schema_snapshot.py`、`scripts/gen_validation_cases.py`、`scripts/gen_nest_handlers.py`、`scripts/nestjs/validation-cases.ts`、`docker/nestjs.compose.yaml`）由 fastapi-temp 维护，本仓库原样复制，不做改动；Python 脚本使用 PEP 723 内联依赖、以 `uv run --script` 执行，在任何仓库只需安装 uv 即可原样运行，路径不依赖 fastapi-temp 的 `src/app` 布局。`make openapi-sync` 默认从同级 fastapi-temp 复制上表产物（`FASTAPI_DIR`，要求两边 `openapi/SOURCE` 相同）；需要独立重跑时执行复制来的 `scripts/openapi-sync.sh`（依赖 Docker 与 uv），产物必须与 fastapi-temp 中的逐字节相同。`export-validation.ts` 目前只在 nestjs 本地提交 `8b5f296`（`release/exam-prep` 领先 origin 1 个提交，未推送）：本地 `openapi-sync` 从 `NESTJS_DIR` 读取即可，CI 中 checkout 并固定 `validation_script` 提交要求该提交已推送到 origin，推送前 CI 只能使用入库产物。
+归属：契约内容的唯一来源是 nestjs（`02fdb4d` 契约提交 + `export-validation.ts`）；生成工具（`scripts/openapi-sync.sh`、`scripts/schema_snapshot.py`、`scripts/gen_validation_cases.py`、`scripts/gen_nest_handlers.py`、`scripts/nestjs/validation-cases.ts`、`scripts/nestjs/nestjs.compose.yaml`）由 fastapi-temp 维护，本仓库原样复制，不做改动；Python 脚本使用 PEP 723 内联依赖、以 `uv run --script` 执行，在任何仓库只需安装 uv 即可原样运行，路径不依赖 fastapi-temp 的 `src/app` 布局。`make openapi-sync` 与 fastapi-temp 同名同义，执行复制来的 `scripts/openapi-sync.sh`（依赖 Docker 与 uv）；`make openapi-copy` 从同级 fastapi-temp 复制共享产物与共享脚本（`FASTAPI_DIR`）；两种方式的产物都必须与 fastapi-temp 中的逐字节相同。`export-validation.ts` 目前只在 nestjs 本地提交 `8b5f296`（`release/exam-prep` 领先 origin 1 个提交，未推送）：本地 `openapi-sync` 从 `NESTJS_DIR` 读取即可，CI 中 checkout 并固定 `validation_script` 提交要求该提交已推送到 origin，推送前 CI 只能使用入库产物。
 
 **校验：`openapi/validation.json` + nestjs oracle 用例**
 
@@ -489,7 +490,7 @@ Java 侧：`PageQuery(page, limit)` → MP `Page`；`PageResponse.of(IPage)` 计
 
 - 监控令牌（nestjs `MonitoringTokenGuard`）：配置了 `METRICS_TOKEN` 时要求 `Authorization: Bearer <METRICS_TOKEN>`（scheme 不区分大小写，`MessageDigest.isEqual` 常量时间比较）；未配置时非生产放行、生产拒绝；拒绝为 403 `{code: 403, message: "Forbidden resource", data: null}`（原文，不翻译）
 - `/api/v1/health*` 为 @nestjs/terminus 12.1.0 形状，成功 200 且带 `Cache-Control: no-cache, no-store, must-revalidate`，`data` 为 `{status: "ok", info: {...}, error: {}, details: {...}}`，每项为 `{<key>: {...附加字段, status: "up"|"down"}}`，`details` = `info` + `error`；任一项 down 时 503，**body 只有 `{code: 503, message: "SERVICE_UNAVAILABLE", data: null}`**（terminus 结果被异常过滤器丢弃，`message` 为 `HttpStatus[503]` 枚举名，不翻译），不带 `Cache-Control`
-- 检查项与顺序：`healthCheck` 为 `memory_heap`（堆 > 300MB 为 down，`{message: "Used heap exceeded the set threshold"}`）、`disk`（`/` 使用率 > 90%，`Used disk storage exceeded the set threshold`）、`database`（`SELECT 1`，1000ms 超时，`{responseTime: <ms>}`，超时 `timeout of 1000ms exceeded`）、`database_pool`（`pg_stat_database.numbackends` / `max_connections`，`{activeConnections, maxConnections, utilizationPercent}`，> 90% 为 down）、`redis`（仅 `REDIS_ENABLED=true` 时加入，PING）、`wechat_api`（`WECHAT_APP_ID` / `WECHAT_APP_SECRET` 缺一则 up `{message: "WeChat not configured, skipped"}`，否则 GET `https://api.weixin.qq.com/cgi-bin/getcallbackip`，5s，2xx 为 up `{responseTime: "OK"}`，否则 down `{statusCode}`）、`alipay_api`（`ALIPAY_APP_ID` 未设置则 up `{message: "Alipay not configured, skipped"}`，否则 HEAD `https://openapi.alipay.com/gateway.do`，2xx 或 405 为 up）；`livenessProbe` 只有 `memory_heap`（成功时为 `{status: "up"}`，无 `responseTime`）；`readinessProbe` 只有 `database`。堆指标 nestjs 为 V8 heapUsed、fastapi-temp 为进程 RSS，Java 取 `MemoryMXBean.getHeapMemoryUsage().getUsed()` 与 300MB 比较；阈值相同，各语言无法逐值一致，数值不属于契约。Actuator `HealthIndicator` 的 `Health` 结构与此不同，只作内部探测，输出由 controller 按上述形状组装
+- 检查项与顺序：`healthCheck` 为 `memory_heap`（已用堆 > `HEALTH_MEMORY_HEAP_THRESHOLD_MB`（默认 300，与 nestjs 相同；部署取值见 §10.3）为 down，响应形状与键名不变，`{message: "Used heap exceeded the set threshold"}`）、`disk`（`/` 使用率 > 90%，`Used disk storage exceeded the set threshold`）、`database`（`SELECT 1`，1000ms 超时，`{responseTime: <ms>}`，超时 `timeout of 1000ms exceeded`）、`database_pool`（`pg_stat_database.numbackends` / `max_connections`，`{activeConnections, maxConnections, utilizationPercent}`，> 90% 为 down）、`redis`（仅 `REDIS_ENABLED=true` 时加入，PING）、`wechat_api`（`WECHAT_APP_ID` / `WECHAT_APP_SECRET` 缺一则 up `{message: "WeChat not configured, skipped"}`，否则 GET `https://api.weixin.qq.com/cgi-bin/getcallbackip`，5s，2xx 为 up `{responseTime: "OK"}`，否则 down `{statusCode}`）、`alipay_api`（`ALIPAY_APP_ID` 未设置则 up `{message: "Alipay not configured, skipped"}`，否则 HEAD `https://openapi.alipay.com/gateway.do`，2xx 或 405 为 up）；`livenessProbe` 只有 `memory_heap`（成功时为 `{status: "up"}`，无 `responseTime`）；`readinessProbe` 只有 `database`。堆指标 nestjs 为 V8 heapUsed、fastapi-temp 为进程 RSS，Java 取 `MemoryMXBean.getHeapMemoryUsage().getUsed()` 与 300MB 比较；阈值相同，各语言无法逐值一致，数值不属于契约。Actuator `HealthIndicator` 的 `Health` 结构与此不同，只作内部探测，输出由 controller 按上述形状组装
 - `GET /api/health`（无 `Cache-Control`）：`{status: "ok", timestamp: <toISOString>, uptime: <进程启动以来整秒>, memory: {heapUsed, heapTotal, rss}（MB，四舍五入）, node: <运行时版本>}`；Java 取当前值：`heapUsed` = 堆已用、`heapTotal` = 堆已提交（`MemoryMXBean.getHeapMemoryUsage()` 的 `used` / `committed`）、`rss` = 进程常驻内存（`com.sun.management.OperatingSystemMXBean` 不提供 RSS，Linux 读 `/proc/self/status` 的 `VmRSS`，其它平台取堆与非堆已提交之和），`node` = `Runtime.version()`；键名与类型属于契约，值不属于
 - `GET /`：`{name: APP_NAME}`（默认 `app`）
 - `/metrics`：不带 `API_PREFIX`、不包信封，`Content-Type: text/plain; version=0.0.4; charset=utf-8`；`METRICS_ENABLED=false` 只关闭 HTTP 指标采集与 JVM 默认指标，路由仍存在（nestjs 行为）。nestjs `setGlobalPrefix` 的排除项写死为 `metrics`，非默认 `METRICS_PATH` 在 nestjs 上会落到 `/api/<path>`；本服务一律不带前缀，部署时保持默认值
@@ -504,19 +505,19 @@ Spring Boot Actuator 只作内部实现（`HealthContributor`、`PrometheusMeter
 
 | # | 项 | nestjs 现状 | 本模板 |
 |---|---|---|---|
-| 1 | 密码哈希 | bcrypt(md5)，cost 10 | **argon2id(md5)**（OWASP 首选，Spring Security `Argon2PasswordEncoder` + BouncyCastle）；按哈希前缀识别 `$2a/$2b`（bcrypt）与 `$argon2id`，登录成功后旧 bcrypt 自动重哈希。客户端仍传 MD5，前端无感 |
+| 1 | 密码哈希 | bcrypt(md5)，cost 10 | **argon2id(md5)**（OWASP 首选，Spring Security `Argon2PasswordEncoder` + BouncyCastle）；参数取 OWASP 推荐值 m=19456 KiB、t=2、p=1（与 fastapi-temp 1eb15d5 相同）；按哈希前缀识别 `$2a/$2b`（bcrypt）与 `$argon2id`，已有哈希照常验证，登录成功后若格式不是当前 `PASSWORD_HASHER` 或 argon2id 参数（`m` / `t` / `p`）与当前配置不同就重哈希（`Argon2PasswordEncoder.upgradeEncoding` 只在参数更低时返回 true，参数比较自写）。哈希与验证都经过进程内 `Semaphore(PASSWORD_HASH_CONCURRENCY)`：一次 argon2id 占 19MiB，虚拟线程下并发几乎不受限，不限流时 1GB 容器会 OOM。客户端仍传 MD5，前端无感 |
 | 2 | 会话 | 已同步到 nestjs | 会话表可空列 `userAgent`（≤512）、`ip`、`lastActiveAt`（每会话最多 5 分钟写一次）；「我的设备」列表、下线指定设备、下线其他设备三个接口，见 §4.6 |
 | 3 | 数据库迁移 | 每个应用容器启动时跑 `migration:run` | 独立一次性 `migrate` 容器（同一镜像，`APP_ROLE=migrate` 只跑 Flyway 后退出），应用 `depends_on: service_completed_successfully`；api / worker 设 `spring.flyway.enabled=false` |
-| 4 | 限流算法 | 固定窗口（`INCR` + `PEXPIRE`，超限后按 TTL 封禁） | Redis Lua **GCRA**（Redisson `RScript`，平滑、无窗口边界突刺；脚本内用 Redis `TIME` 取时间，键值为理论到达时间 TAT，`SET … PX`），进程内回落实现同算法且限制键数量；响应头名与出现条件与 nestjs 的 @nestjs/throttler 一致（§4.1「限流细则」）。键为 nestjs 计数键加 `:gcra` 后缀（`throttle:<sha>:default:gcra`），不与 nestjs 的 `INCR` 计数冲突，共用 Redis 时两边各自计数，见 §14 |
+| 4 | 限流算法 | 固定窗口（`INCR` + `PEXPIRE`，超限后按 TTL 封禁） | Redis Lua **GCRA**（Redisson `RScript`，平滑、无窗口边界突刺；脚本内用 Redis `TIME` 取时间，键值为理论到达时间 TAT（毫秒十进制字符串，与 fastapi-temp 相同），`SET … PX`；内部判定用整数微秒，见 §4.1「限流细则」GCRA 计算），进程内回落实现同算法且限制键数量；响应头名与出现条件与 nestjs 的 @nestjs/throttler 一致（§4.1「限流细则」）。键为 nestjs 计数键加 `:gcra` 后缀（`throttle:<sha>:default:gcra`），不与 nestjs 的 `INCR` 计数冲突；共用 Redis 时 Python、Go、Java 三个 GCRA 后端共用 `:gcra` 键、共同计数，nestjs 用固定窗口键、单独计数，见 §14 |
 | 5 | Request ID | 已同步到 nestjs（校验 + 回写） | 同 nestjs；日志另带 OTel `trace_id` / `span_id`（Micrometer Tracing 写入 MDC），日志与链路可互相跳转 |
 | 6 | OpenAPI | 运行时生成，无版本管理 | spec-first：`/docs-json` 输出入库的基线原文；DTO 与接口由基线生成，契约测试保证本期 operation 全部有实现 |
 | 7 | 新表主键 | uuid v4 | **UUIDv7**（按时间有序，索引友好；JDK 25 的 `java.util.UUID` 只有 v3 / v4 工厂方法，自写 RFC 9562 生成器）；已有 int 主键（user 等）保持不变 |
-| 8 | 事务 | 服务内手动管理 | service 写方法统一用组合注解 `@WriteTransaction`（= `@Transactional(noRollbackFor = HttpStatusException.class)`，`HttpStatusException` 为 `BusinessException` 与 401 / 403 / 404 / 422 等 HTTP 异常的共同父类），ArchUnit 禁止直接使用 `@Transactional`。结束规则（与 fastapi-temp `src/app/infrastructure/database/session.py` 的 `Database.transaction` 相同，语言无关）：**成功 → 提交；4xx 业务 / HTTP 异常 → 提交已写入的内容后再抛出；其它异常 → 回滚**。Spring 默认「RuntimeException 即回滚」会把 §6.3 刷新重放时的会话吊销随 401 一起撤销，因此不能用默认规则；吊销本身另用 `REQUIRES_NEW` 独立事务执行，双重保证。例外：数据库语句失败（如唯一约束冲突）后事务已处于失败状态，**不得按 4xx 提交**：`DataIntegrityViolationException` 等数据访问异常在事务边界之外（`GlobalExceptionHandler`）才翻译成 422 / 409，service 内不得捕获后改抛 `HttpStatusException`；内层参与事务的方法同样使用 `@WriteTransaction`，避免被标记为 rollback-only 后提交时抛 `UnexpectedRollbackException`。发邮件、投递任务等副作用通过 `TransactionSynchronization.afterCommit` 在提交成功后执行；4xx 提交路径与 fastapi-temp 一致丢弃已登记的提交后副作用（副作用先登记到事务绑定的列表，`@WriteTransaction` 切面在 4xx 时清空列表再提交）。测试要求见 §6.3 |
+| 8 | 事务 | 服务内手动管理 | service 写方法统一用组合注解 `@WriteTransaction`（= `@Transactional(noRollbackFor = HttpStatusException.class)`，`HttpStatusException` 为 `BusinessException` 与 401 / 403 / 404 / 422 等 HTTP 异常的共同父类），ArchUnit 禁止直接使用 `@Transactional`。结束规则（与 fastapi-temp `src/app/infrastructure/database/session.py` 的 `Database.transaction` 相同，语言无关）：**成功 → 提交；4xx 业务 / HTTP 异常 → 提交已写入的内容后再抛出；其它异常 → 回滚**。Spring 默认「RuntimeException 即回滚」会把 §6.3 刷新重放时的会话吊销随 401 一起撤销，因此不能用默认规则；吊销写在请求事务内，由该规则在 401 时提交（不用 `REQUIRES_NEW`，见第 13 项）。例外：数据库语句失败（如唯一约束冲突）后事务已处于失败状态，**不得按 4xx 提交**：`DataIntegrityViolationException` 等数据访问异常在事务边界之外（`GlobalExceptionHandler`）才翻译成 422 / 409，service 内不得捕获后改抛 `HttpStatusException`；内层参与事务的方法同样使用 `@WriteTransaction`，避免被标记为 rollback-only 后提交时抛 `UnexpectedRollbackException`。发邮件、投递任务等副作用通过 `TransactionSynchronization.afterCommit` 在提交成功后执行；4xx 提交路径与 fastapi-temp 一致丢弃已登记的提交后副作用（副作用先登记到事务绑定的列表，`@WriteTransaction` 切面在 4xx 时清空列表再提交）。测试要求见 §6.3 |
 | 9 | 优雅停机 | 依赖 Nest 默认 | `server.shutdown=graceful` + `spring.lifecycle.timeout-per-shutdown-phase`；JobRunr 停机等待在途任务；容器 `stop_grace_period` 与之匹配 |
 | 10 | 配置校验 | 运行时按模块校验 | 全部 `@ConfigurationProperties` + `@Validated`；启动时自定义校验器汇总全部缺失项一次性报错退出 |
 | 11 | 语言头 | 已同步到 nestjs（`AcceptLanguageResolver`） | 标准头 `Accept-Language`，见 §4.2 |
-| 12 | 测试隔离 | e2e 连真实服务、串行执行 | 集成测试用 Testcontainers 起 Postgres / Redis；大部分测试在测试事务内执行后回滚（应用内的事务加入测试事务，`REQUIRES_NEW` 的写入除外，见 §15.3）；依赖真实提交的测试从已迁移 + seed 的模板库 `CREATE DATABASE … TEMPLATE` 克隆独立库，不用 TRUNCATE；可并行，见 §15 |
-| 13 | 并发模型 | 单线程事件循环 | **虚拟线程**（`spring.threads.virtual.enabled=true`）；JDK 24 起 `synchronized` 不再钉住载体线程（JEP 491），这是选 25 而非 21 的主要原因；连接池大小仍是数据库并发上限 |
+| 12 | 测试隔离 | e2e 连真实服务、串行执行 | 集成测试用 Testcontainers 起 Postgres / Redis；大部分测试在测试事务内执行后回滚（应用内的事务加入测试事务，见 §15.3）；依赖真实提交的测试从已迁移 + seed 的模板库 `CREATE DATABASE … TEMPLATE` 克隆独立库，不用 TRUNCATE；可并行，见 §15 |
+| 13 | 并发模型 | 单线程事件循环 | **虚拟线程**（`spring.threads.virtual.enabled=true`）；JDK 24 起 `synchronized` 不再钉住载体线程（JEP 491），这是选 25 而非 21 的主要原因；连接池大小仍是数据库并发上限，也是虚拟线程模式下真正的瓶颈：同一请求在持有一个连接时不得再申请第二个连接（不用 `REQUIRES_NEW`、不另开独立连接），否则并发数达到池大小时所有请求互相等待，满 30s 后失败 |
 
 第 1 项与「两个后端共用同一个库」有冲突（nestjs 无法验证 argon2id）：共用期间设 `PASSWORD_HASHER=bcrypt`，独立部署时用默认 `argon2id`。第 2、5、11 项与限流响应头已在 nestjs 实现，属于共同契约。
 
@@ -547,7 +548,7 @@ Spring Boot Actuator 只作内部实现（`HealthContributor`、`PrometheusMeter
 
 ### 6.2 access 校验
 
-只认 Bearer 头 → 必须有 `id`、`sessionId` → 查缓存 `jwt:session:{sessionId}`（30s，存 `{statusId, roleId}`），未命中查库：会话存在且属于该用户、用户状态 active / inactive → 以数据库角色覆盖令牌角色；同时节流更新 `lastActiveAt`（每会话每 5 分钟最多一次）。失败 401，`message` 为 nestjs `jwt.strategy.ts` 原文（无翻译键，原文输出）：
+只认 Bearer 头 → 必须有 `id`、`sessionId` → 查缓存 `jwt:session:{sessionId}`（30s，存 `{statusId, roleId}`），未命中查库：会话存在且属于该用户、用户状态 active / inactive → 以数据库角色覆盖令牌角色；同时节流更新 `lastActiveAt`（每会话每 5 分钟最多一次）。查库与更新在鉴权过滤器内用同一个连接完成并在进入 handler 前归还，handler 的事务之后再取连接，单个请求任何时刻只占一个连接；更新失败只记日志，不影响鉴权结果（与 fastapi-temp 1eb15d5 在请求事务内用 SAVEPOINT 更新的效果相同：都不在持有连接时申请第二个）。失败 401，`message` 为 nestjs `jwt.strategy.ts` 原文（无翻译键，原文输出）：
 
 | 情形 | message |
 |---|---|
@@ -581,7 +582,7 @@ Spring Boot Actuator 只作内部实现（`HealthContributor`、`PrometheusMeter
 - `session.hash != payload.hash`：若 `payload.hash` 等于 `session:rotated:{id}` 中记录的「刚被换掉的旧 hash」（轮换时写入，TTL 60s；nestjs `session.service.ts` `wasRecentlyRotatedFrom`）→ 普通 401（并发刷新的落后请求）；否则判为重放，吊销会话并 401。该键只保存**最近一次**被换掉的一个 hash，再次轮换即覆盖：h0 → h1 → h2 两次轮换后再用 h0 刷新属于重放
 - 会话匹配后重新读取用户：用户或角色不存在 → 401；用户状态不是 active / inactive → **422** `{refresh: 'userNotActive'}`（nestjs `validateUserStatusForAuth(user, 'refresh')`，输出译文 `User is not active` / `用户未激活`）
 - 否则生成新 hash，以 `UPDATE session SET hash = :new WHERE id = :id AND hash = :old` 做 CAS（MP `update(entity, wrapper)` 返回行数），0 行则 401；成功后把旧 hash 写入 `session:rotated:{id}`，返回 `RefreshResponseDto`（新 access 的 `role` 为 `{id}`）
-- 重放吊销与 401 同在一个请求内：按 §5 第 8 项，401 属于 4xx，吊销写入必须提交（另以 `REQUIRES_NEW` 执行）。集成测试（克隆库模式）：登录 → 刷新得到 h1 → 再刷新得到 h2 → 用 h0 刷新返回 401 → 此后用 h2 刷新返回 401、用登录时的 access 令牌请求 `auth/me` 返回 401 `Session expired`
+- 重放吊销与 401 同在一个请求内：按 §5 第 8 项，401 属于 4xx，吊销写入在请求事务内，由 `@WriteTransaction` 在 401 时提交。集成测试（克隆库模式）：登录 → 刷新得到 h1 → 再刷新得到 h2 → 用 h0 刷新返回 401 → 此后用 h2 刷新返回 401、用登录时的 access 令牌请求 `auth/me` 返回 401 `Session expired`
 - logout 软删会话并清缓存；改密 / 重置 / 换邮箱删除其它会话；03:00 物理删除软删超过 7 天的会话
 
 ### 6.4 密码
@@ -637,7 +638,7 @@ Spring Boot Actuator 只作内部实现（`HealthContributor`、`PrometheusMeter
 | 独立部署（默认） | Flyway | 正常 `migrate` |
 | 与 nestjs 共库 | nestjs（TypeORM） | 设 `DB_SCHEMA_OWNER=external`：migrate 容器跳过，启动时只校验所需表 / 列存在；会话设备列已在 nestjs 迁移 `AddSessionClientInfo` 中；JobRunr 表放独立 schema，不与 nestjs 表混放 |
 
-**Seed**：与 nestjs `user-seed.service.ts` 一致。非生产创建 `admin@example.com`、`john.doe@example.com`（密码 `Secret00`）等演示账号；生产不创建演示账号，仅在 `SEED_ADMIN_EMAIL`（去空白、转小写）与 `SEED_ADMIN_PASSWORD` 都设置且尚无管理员时创建管理员。nestjs 以 `ENV_MODE=prod` 判定生产，本服务与 fastapi-temp 一样以 `APP_ENV=production` 判定（nestjs 参照服务在 `docker/nestjs.compose.yaml` 中以 `ENV_MODE=dev` 执行 seed）。seed 幂等，可重复执行。
+**Seed**：与 nestjs `user-seed.service.ts` 一致。非生产创建 `admin@example.com`、`john.doe@example.com`（密码 `Secret00`）等演示账号；生产不创建演示账号，仅在 `SEED_ADMIN_EMAIL`（去空白、转小写）与 `SEED_ADMIN_PASSWORD` 都设置且尚无管理员时创建管理员。nestjs 以 `ENV_MODE=prod` 判定生产，本服务与 fastapi-temp 一样以 `APP_ENV=production` 判定（nestjs 参照服务在 `scripts/nestjs/nestjs.compose.yaml` 中以 `ENV_MODE=dev` 执行 seed）。seed 幂等，可重复执行。
 
 ---
 
@@ -672,7 +673,7 @@ Spring Boot Actuator 只作内部实现（`HealthContributor`、`PrometheusMeter
 |---|---|
 | `NODE_ENV` | `APP_ENV`（development / test / production） |
 | `DATABASE_TYPE`、`DATABASE_SYNCHRONIZE` | 不需要 |
-| — | `PASSWORD_HASHER`、`DB_SCHEMA_OWNER`、`OTEL_ENABLED`、`OTEL_EXPORTER_OTLP_ENDPOINT`、`SENTRY_DSN`、`APP_ROLE`（api / worker / migrate / seed）、`JAVA_OPTS` |
+| — | `PASSWORD_HASHER`、`PASSWORD_HASH_CONCURRENCY`（默认 `2`，每个进程同时进行的密码哈希 / 验证数，§5 第 1 项）、`WORKER_DATABASE_MAX_CONNECTIONS`（默认 `10`，worker 进程 Hikari `maximumPoolSize`）、`HEALTH_MEMORY_HEAP_THRESHOLD_MB`（默认 `300`，与 nestjs 写死的值相同；部署 compose 与镜像设为 `500`，§10.3）、`DB_SCHEMA_OWNER`、`OTEL_ENABLED`、`OTEL_EXPORTER_OTLP_ENDPOINT`、`SENTRY_DSN`、`APP_ROLE`（api / worker / migrate / seed）、`JAVA_OPTS` |
 
 与 nestjs 同名同义、契约相关的变量（必须支持，默认值与 nestjs 一致）：
 
@@ -692,6 +693,7 @@ Spring Boot Actuator 只作内部实现（`HealthContributor`、`PrometheusMeter
 | `MAIL_HOST` / `MAIL_PORT` / `MAIL_USER` / `MAIL_PASSWORD` / `MAIL_DEFAULT_EMAIL` / `MAIL_DEFAULT_NAME` / `MAIL_IGNORE_TLS` / `MAIL_SECURE` / `MAIL_REQUIRE_TLS` | `MAIL_PORT` 587，三个布尔只认 `true` | nestjs 任何环境都要求 `MAIL_HOST`、`MAIL_DEFAULT_EMAIL`、`MAIL_DEFAULT_NAME`；本服务与 fastapi-temp 一样只在生产强制，非生产未设置 `MAIL_HOST` 时邮件只写日志 |
 | `SWAGGER_ENABLED` | 非生产 `true`、生产 `false` | 控制 `/docs`、`/docs-json` |
 | `APP_FALLBACK_LANGUAGE` | `en` | 语言回落 |
+| `DATABASE_MAX_CONNECTIONS` | `80`（nestjs 为 100） | 所有 API 进程合计的连接上限（与 fastapi-temp 1eb15d5 同义）；Java 单进程，直接作为 api 进程 Hikari `maximumPoolSize`，多副本部署时每个副本设为合计值 / 副本数。api 进程内 JobRunr 的入队与存储读写共用该连接池，计入此值。worker 进程（`APP_ROLE=worker`，JobRunr background server，§8「进程」）是独立 JVM，连接池由 `WORKER_DATABASE_MAX_CONNECTIONS`（默认 `10`，与 fastapi-temp 同名同义）决定。约束：**API 合计 + worker 合计 + migrate / seed ≤ Postgres `max_connections`**（默认 100，另扣超级用户保留连接 3 个）；默认 80 给 worker 与迁移留出余量，nestjs 的 100 在加上这两部分后会超过上限；虚拟线程模式下连接池是真正的并发上限（§5 第 13 项） |
 | `AUTH_JWT_TOKEN_EXPIRES_IN` 等 `*_EXPIRES_IN` | `15m` / `3650d` / `30m` / `1d` | 按 npm `ms` 规则解析（§6.1） |
 | `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` | 空 | 仅生产 seed 使用（§7「Seed」）；nestjs 侧生产判定变量为 `ENV_MODE=prod`，本服务为 `APP_ENV=production` |
 
@@ -729,10 +731,11 @@ Spring Boot Actuator 只作内部实现（`HealthContributor`、`PrometheusMeter
 - 多阶段：builder（`eclipse-temurin:25.0.5_8-jdk-noble`，先拷 pom 与 `.mvn` 做 `dependency:go-offline` 缓存层，再拷源码 `./mvnw -DskipTests package`，BuildKit cache mount `~/.m2`；同阶段 `javac` 编译 `docker/HealthProbe.java` 为 class 文件）→ extract（`java -Djarmode=tools -jar app.jar extract --layers --launcher`）→ runtime（`eclipse-temurin:25.0.5_8-jre-noble`，按 dependencies / spring-boot-loader / snapshot-dependencies / application 分层拷贝，非 root 用户）
 - `HEALTHCHECK`：`java -cp /app/probe HealthProbe http://localhost:${APP_PORT}/api/v1/health/live`。JRE 镜像不含 `jdk.compiler`，不能用单文件源码启动器，所以在 builder 阶段预编译；不额外装 curl。manage.sh 与 deploy.yml 另外轮询 `/api/v1/health/ready`
 - 另有 `development` 目标
-- JVM：`-XX:MaxRAMPercentage=75 -XX:+UseZGC`、`-Duser.timezone=UTC`；AOT cache（JDK 25）M5 评估后决定是否加训练步骤
+- JVM：`-XX:MaxRAMPercentage=60 -XX:+UseZGC`、`-Duser.timezone=UTC`；按 2 CPU / 1GB 容器取值，1GB 下堆上限约 614MB，其余留给元空间、代码缓存、线程栈与直接内存，RSS 不得触及容器限制；`memory_heap` 探针（§4.6）阈值由 `HEALTH_MEMORY_HEAP_THRESHOLD_MB` 配置，代码默认 300（与 nestjs 相同），部署 compose 与 Dockerfile 的 `ENV` 设为 `500`。依据：1GB × 60% ≈ 614MB 堆上限；ZGC 是并发回收，已用堆在两次回收之间随分配上升，负载下常态即可超过 300MB，沿用 300 会让存活探针反复重启容器；500 约为堆上限的 81%，正常负载下 ZGC 会在接近该水位前完成回收，持续超过 500 说明回收跟不上或存在泄漏，此时重启是合理的；HEALTHCHECK 连续失败 3 次才判定不健康，单次尖峰不会触发。M5 压测记录已用堆峰值，据此复核该值；AOT cache（JDK 25）M5 评估后决定是否加训练步骤
 - 构建：buildx 多架构（amd64 / arm64），生成 SBOM 与 provenance attestation
 - `.dockerignore` 白名单写法；hadolint 检查 Dockerfile
 - compose：`docker/` 下与 nestjs 同名同职责（base、postgres、redis、dev、test、ci、ecs），邮件服务用 Mailpit；dev 用 `develop.watch` 同步 `target/classes` 配合 DevTools
+- 部署 compose 文件写死项目名（顶层 `name:`），manage.sh 与 deploy.yml 中的 `docker compose` 调用都显式带 `--env-file .env`；否则项目名取部署目录名（如 `docker`），部署目录的 `.env` 也不参与变量替换
 - 开发机已有本地 Docker：镜像构建、compose、Testcontainers 在每个阶段都必须在本地跑通，CI 再跑一遍
 
 ### 10.4 依赖与安全
@@ -786,21 +789,27 @@ Javadoc 同样适用「禁止背景故事」。机器检查：Checkstyle `TodoCo
 | build | `./mvnw -DskipTests package`，产物 jar 可启动（`APP_ROLE=migrate` 对空库冒烟） | – |
 | image-scan | 构建生产镜像 + Trivy（`--severity HIGH,CRITICAL --ignore-unfixed`）；失败单独标红，不阻塞 e2e | – |
 | e2e | compose（base + postgres + redis + ci）起 migrate → seed → api + worker，跑 `-Pe2e`，失败上传日志 | lint、type-check、test、build、migrations、workflow-lint、security |
-| parity | 以共享的 `docker/nestjs.compose.yaml`（`FILE_DRIVER=local`，映射 3001）启动 nestjs（镜像优先拉取 GHCR，`packages: read`；不可用时按 `openapi/SOURCE` 的 `commit` checkout 后构建），本服务同一份 seed、同一组测试密钥，跑 `-Pparity`；重跑 `scripts/openapi-sync.sh`（`export-validation.ts` 取 `validation_script` 提交，要求已推送到 origin），共享产物无 diff；另外 checkout nestjs 固定提交，复用 `test/user/auth.e2e-spec.ts`（11 个用例）打本服务 | build、migrations |
+| parity | 以共享的 `scripts/nestjs/nestjs.compose.yaml`（`FILE_DRIVER=local`，映射 3001）启动 nestjs（镜像优先拉取 GHCR，`packages: read`；不可用时按 `openapi/SOURCE` 的 `commit` checkout 后构建），本服务同一份 seed、同一组测试密钥，跑 `-Pparity`；重跑 `scripts/openapi-sync.sh`（`export-validation.ts` 取 `validation_script` 提交，要求已推送到 origin），共享产物无 diff；另外 checkout nestjs 固定提交，复用 `test/user/auth.e2e-spec.ts`（11 个用例）打本服务；该 spec 在开着限流时对 nestjs 自身也会失败（12 次登录超过 5 次 / 分钟），对照 nestjs 时用第二个关掉限流的 nestjs 实例（fastapi-temp 用 3002 端口） | build、migrations |
 
 parity job 是「前端无改动切换」最直接的证据。说明：
 
 - nestjs-template（`xingyunqi-tech/nestjs-template`）当前为公开仓库（2026-11-11 `gh repo view` 查询），可匿名 checkout；仍以固定提交 + GHCR 镜像为主，避免每次 CI 构建 nestjs，且仓库日后转私有时只需补 `packages: read` 或只读 deploy key；test / migrations job 的结构比对用入库的 `db/nestjs-schema.sql`，只有 parity job 重跑 nestjs 迁移生成快照
 - nestjs 的 e2e 中只有 `test/user/auth.e2e-spec.ts` 通过 `APP_URL` 以 HTTP 黑盒方式访问，可直接指向本服务复用；其余目录用 `createTestApp` 在进程内启动 Nest，无法复用
 - 因此本仓库建 `tests/parity`（§15.5），用例清单按 fastapi-temp `tests/parity` 逐条移植，覆盖本期全部端点的正常与错误路径；同一套用例对 nestjs 也必须通过，用来证明用例本身写的是 nestjs 的真实行为
-- 前提：seed 账号一致（`admin@example.com`、`john.doe@example.com`，密码 `Secret00`）、测试用密钥一致、端口可配置；两端都设 `THROTTLE_ENABLED=true`（`env-example-relational` 默认 false），限流用例单独放在最后执行并在用例间等待窗口恢复
+- 前提：seed 账号一致（`admin@example.com`、`john.doe@example.com`，密码 `Secret00`）、测试用密钥一致、端口可配置
+- 限流约定（与 fastapi-temp 0baf8cc 相同，逐条移植用例时照做）：
+  - 两端都设 `THROTTLE_ENABLED=true`（`env-example-relational` 默认 false）、`TRUST_PROXY=1`
+  - 每个请求带不同的 `X-Forwarded-For`
+  - 需要登录的接口按用户计数限流，改用每次运行新建的临时用户
+  - 每对响应比对限流头：头集合一致、取值都是整数、`X-RateLimit-Limit` 相等
+  - 出现 429 一律算失败，专门的 429 用例除外
 - 本地与 CI 执行同一组目标：开发机已有 Docker，`make it`（Testcontainers）、`make test-e2e`、`make test-parity`、镜像构建在每个阶段结束前都在本地跑通，CI 结果用于复核
 
 另有 `drift.yml`：每周定时 + 手动，对 nestjs release 分支 HEAD（而非 `SOURCE` 固定提交）重跑 `openapi-sync`，与入库的共享产物比对，有差异时失败并在 job summary 中列出，提醒执行 `make openapi-sync`。
 
 ### 11.2 deploy.yml
 
-与 nestjs 一致：手动触发，输入 deploy、target（aliyun / tencent / all）；多架构镜像推 GHCR（+ 腾讯 TCR），带 SBOM / provenance；矩阵部署 `aliyun-production` / `tencent-production`；scp compose + manage.sh；SSH 拉镜像（3 次重试）→ 执行 migrate 服务 → `up -d --remove-orphans` → 轮询 `/api/v1/health/ready` 30 次 → 保留最新 3 个镜像；notify `timeout-minutes: 5`。
+与 nestjs 一致：手动触发，输入 deploy、target（aliyun / tencent / all）；多架构镜像推 GHCR（+ 腾讯 TCR），带 SBOM / provenance；矩阵部署 `aliyun-production` / `tencent-production`；scp compose + manage.sh；compose 调用带 `--env-file .env`（§10.3）；SSH 拉镜像（3 次重试）→ 执行 migrate 服务 → `up -d --remove-orphans` → 轮询 `/api/v1/health/ready` 30 次 → 保留最新 3 个镜像；notify `timeout-minutes: 5`。
 
 ### 11.3 cleanup-registry.yml
 
@@ -808,7 +817,7 @@ parity job 是「前端无改动切换」最直接的证据。说明：
 
 ### 11.4 deploy/manage.sh
 
-命令集同 nestjs（start / stop / restart / remove / status / logs / health / cleanup / help），容器名 `springboot-api`，健康检查 `http://localhost:3000/api/v1/health/ready`（端口取 `APP_PORT`）；`start` 先跑 migrate 服务。
+命令集同 nestjs（start / stop / restart / remove / status / logs / health / cleanup / help），容器名 `springboot-api`，健康检查 `http://localhost:3000/api/v1/health/ready`（端口取 `APP_PORT`）；`start` 先跑 migrate 服务；所有 `docker compose` 调用带 `--env-file .env`，项目名由 compose 文件的 `name:` 固定（§10.3）。
 
 ---
 
@@ -819,9 +828,9 @@ parity job 是「前端无改动切换」最直接的证据。说明：
 | **M0 骨架** | 在本仓库（已 `git init`）用 Spring Initializr 生成 Boot 4.1.2 / Java 25 / Maven 骨架；按 §3 建模块树；§10 工程配置（Spotless、Error Prone、NullAway、Checkstyle、enforcer、JaCoCo 聚合、prek、Makefile、Renovate、编辑器配置）；ArchUnit 基础规则；NOTICE | `make check`、`make test` 本地全绿（含 Testcontainers 冒烟用例）；enforcer `bannedDependencies` 通过；工作树中除 NOTICE 外无 `dromara` / `hutool` / `satoken` 字样（`git grep -il 'dromara\|hutool\|satoken' -- ':!NOTICE' ':!TEMPLATE_PLAN.md' ':!pom.xml' ':!**/ArchitectureTest.java'` 为空；排除的是方案本身与 enforcer / ArchUnit 的禁用规则） |
 | **M1 全局契约** | `openapi-sync`（§4.3 共享产物全部文件，与 fastapi-temp 逐字节一致）、openapi-tools（叠加、可空性修正）、代码生成（含覆盖的 `api.mustache`）、`template-views`、`/docs-json`；**`ClassValidatorEngine`（复刻 ValidationPipe，含 validator.js 移植，本阶段最大工作量）**；Express 路由语义（方法不符 404、尾斜杠、原始路径匹配）、`JsonBodyFilter`（413 / 400 先于路由与鉴权）、OPTIONS 204；信封与 `VoidEnvelopeReturnValueHandler`、异常处理与翻译规则、422 映射、唯一约束表、i18n、Request ID、CORS、安全头（helmet 集合）、分页；契约测试框架 | **`tests/contract/fixtures/validation-cases.json` 约 4516 条 nestjs oracle 用例全部通过**；每种错误形状有单元测试；`/docs-json` 与基线逐字节一致；`void` 接口响应体为 `{"code":200,"message":"success"}`；scope 内除 upload 外全部 operation 返回 HTTP 200；非法 `:id` 为 400；契约测试通过；`tests/parity` 全局契约用例（与 fastapi-temp `test_global_contract.py` 对应）对 nestjs 与本服务均通过 |
 | **M2 数据层与认证核心** | MyBatis-Plus camelCase 映射、Flyway `V1`、核心表、seed（含生产 `SEED_ADMIN_*`）；`@WriteTransaction`（§5 第 8 项）；Spring Security 双过滤器链、路由声明注册表、JWT；邮箱注册 / 登录 / 确认 / 找回、refresh 轮换、logout、me、改密、注销、会话管理接口；RBAC；users 接口 | 集成测试覆盖认证与用户全部分支（含：过期 access 令牌访问公开登录接口返回 200、refresh 成功轮换、并发刷新落后请求 401 而不吊销、**重放刷新返回 401 且会话被吊销（之后 access 令牌 401 `Session expired`）**、登录响应键顺序、两种令牌 `role` 形状、`exp` 计算、§7 结构快照比对），本地与 CI 均通过；nestjs `test/user/auth.e2e-spec.ts`（11 个用例）以 `APP_URL` 指向本服务全部通过；`tests/parity` 认证与用户部分对两个后端均通过；vite-vue3-temp 不改代码指向本服务，可完成登录、刷新令牌、获取用户信息、退出（后台里的考试业务页面依赖本期不做的接口，不在验收范围）。不以「Orval 重新生成零 diff / `vue-tsc`」作验收：`/docs-json` 与基线逐字节相同，这两项必然成立，不构成证据 |
-| **M3 基础设施** | 缓存 / 锁（`SET NX` 格式）、GCRA 限流（§4.1「限流细则」）、日志、指标、链路、健康检查、Sentry、JobRunr 队列与定时（自写退避、去重）、审计、告警、账号清理（含补偿任务）、邮件（`.hbs` + 队列）、文件三驱动（含 s3-presigned、multipart 流式解析）；同步共享产物 `openapi/nest_handlers.json`，复制 fastapi-temp 的 `tests/fixtures/nestjs_mail/` | 单元：`normalizeIp`、限流键（与 nestjs `sha256` 键逐字相同）、GCRA 参数、指标路由标签转换、邮件 golden 用例；集成：限流头出现条件（放行 / 429 / 关闭 / 未匹配路由）、按用户与按 IP 计数、Redis 故障回落与恢复（计数器 + 告警）、锁（Redis 与回落）、health 三个探针成功与 503 body、监控令牌、`/metrics` 名称 / 标签 / 桶 / `<unmatched>` / 499、上传矩阵（local 与 MinIO 上的 s3 / s3-presigned，201）、私有文件访问、任务重试 / 去重 / 最终失败告警与 afterCommit 投递、账号清理全流程与补偿、两个清理任务的条件；parity：限流头、files parity 全部用例 |
+| **M3 基础设施** | 缓存 / 锁（`SET NX` 格式）、GCRA 限流（§4.1「限流细则」）、日志、指标、链路、健康检查、Sentry、JobRunr 队列与定时（自写退避、去重）、审计、告警、账号清理（含补偿任务）、邮件（`.hbs` + 队列）、文件三驱动（含 s3-presigned、multipart 流式解析）；同步共享产物 `openapi/nest_handlers.json`，复制 fastapi-temp 的 `tests/fixtures/nestjs_mail/` | 单元：`normalizeIp`、限流键（与 nestjs `sha256` 键逐字相同）、GCRA 参数与整数微秒判定（`limit=1` 全新键首个请求放行、fastapi-temp be36777 的反例 `now`、读取 fastapi 格式的 TAT 字符串）、指标路由标签转换、邮件 golden 用例；集成：限流头出现条件（放行 / 429 / 关闭 / 未匹配路由）、按用户与按 IP 计数、Redis 故障回落与恢复（计数器 + 告警）、锁（Redis 与回落）、health 三个探针成功与 503 body、监控令牌、`/metrics` 名称 / 标签 / 桶 / `<unmatched>` / 499、上传矩阵（local 与 MinIO 上的 s3 / s3-presigned，201）、私有文件访问、任务重试 / 去重 / 最终失败告警与 afterCommit 投递、账号清理全流程与补偿、两个清理任务的条件；parity：限流头、files parity 全部用例 |
 | **M4 扩展登录与通用模块** | 短信、手机号、微信、支付宝登录；8 个通用模块；代码生成器 | uniapp-template 指向本服务可手机号登录；契约测试本期路由零差异；parity 覆盖全部本期端点 |
-| **M5 交付** | Dockerfile（含预编译 HealthProbe）、compose、manage.sh、三个 workflow、Renovate、安全扫描、README / CLAUDE.md / docs；AOT cache 评估 | CI 全绿（lint、workflow-lint、type-check、test、migrations、contract、security、build、image-scan、e2e、parity）；JaCoCo 聚合阈值与测试数量下限达标；k6 压测登录、刷新、`auth/me`、列表四个接口，结果记录到 `docs/benchmark.md`，与 nestjs 同环境对比 |
+| **M5 交付** | Dockerfile（含预编译 HealthProbe）、compose、manage.sh、三个 workflow、Renovate、安全扫描、README / CLAUDE.md / docs；AOT cache 评估 | CI 全绿（lint、workflow-lint、type-check、test、migrations、contract、security、build、image-scan、e2e、parity）；JaCoCo 聚合阈值与测试数量下限达标；k6 压测登录、刷新、`auth/me`、列表四个接口，复用 fastapi-temp `scripts/bench/` 与 `docs/benchmark.md` 的场景与格式，同样 2 CPU / 1GB，结果记录到 `docs/benchmark.md`，与 nestjs 同环境对比 |
 
 阶段流程：每个阶段「开发 → 子 agent review → 修复 → 本地提交」后再进入下一阶段；阶段验收中的容器类检查（Testcontainers、compose e2e、parity、镜像构建）在本地跑通后才提交；不 push。
 
@@ -857,7 +866,7 @@ parity job 是「前端无改动切换」最直接的证据。说明：
 | 风险 | 影响 | 应对 |
 |---|---|---|
 | 校验执行器与 class-validator / validator.js 语义不等价 | 本服务比 nestjs 宽松或更严 | 未实现约束启动失败；validator.js 逐函数移植；约 4516 条 nestjs oracle 用例作 M1 门禁；parity 覆盖 422 响应体 |
-| 事务按 Spring 默认「RuntimeException 即回滚」 | 刷新重放的会话吊销随 401 一起回滚，重放被检测后会话仍然有效 | §5 第 8 项 `@WriteTransaction` + 吊销 `REQUIRES_NEW` + §6.3 克隆库集成测试 |
+| 事务按 Spring 默认「RuntimeException 即回滚」 | 刷新重放的会话吊销随 401 一起回滚，重放被检测后会话仍然有效 | §5 第 8 项 `@WriteTransaction`（4xx 提交）+ §6.3 克隆库集成测试 |
 | 响应可空性 / 分组字段处理遗漏 | 前端拿到缺键或多余键 | 手写视图 + 对 nestjs 录制样本的键存在性测试（§15.3） |
 | 422 消息文本、顺序或错误翻译与 nestjs 不一致 | 前端按文本判断时显示不同 | `defaultMessage` 模板 + 装饰器顺序 + oracle 用例 + §4.1 翻译规则单元测试 + parity 比对 `message` / `data` |
 | openapi-generator 对个别 schema 生成不理想（allOf、枚举、nullable）或模板覆盖随升级失效 | 编译失败或行为偏差 | `schemaMappings` 映射到手写类并登记；升级生成器后跑 `void` 响应体与契约测试 |
@@ -867,7 +876,7 @@ parity job 是「前端无改动切换」最直接的证据。说明：
 | nestjs 仓库可见性或 GHCR 包权限变化 | parity job 无法拉取 | §13 第 14 项，缺权限时 job 失败而非跳过 |
 | GitHub / 镜像仓库网络不稳定 | 依赖、镜像下载失败 | Maven 依赖走本机镜像配置，Docker 镜像加速；CI 步骤对网络操作加重试 |
 | 虚拟线程下的钉住或 ThreadLocal 滥用 | 吞吐下降 | JDK 25 已解决 `synchronized` 钉住；压测时开 `jdk.VirtualThreadPinned` JFR 事件检查 |
-| 与 nestjs 共用 Redis 且两边都开启限流 | 若写同一个键（GCRA 存 TAT 浮点串，nestjs 存 `INCR` 计数），nestjs `INCR` 报错后降级为单实例内存计数并告警，或误封 | GCRA 写 `throttle:<sha>:default:gcra`，不碰 nestjs 计数键；两边各自计数，同一客户端在两个后端上的配额相互独立；parity 环境两边各用独立 Redis |
+| 与 nestjs 共用 Redis 且两边都开启限流 | 若写同一个键（GCRA 存 TAT 毫秒十进制串，nestjs 存 `INCR` 计数），nestjs `INCR` 报错后降级为单实例内存计数并告警，或误封 | GCRA 写 `throttle:<sha>:default:gcra`，不碰 nestjs 计数键；共用 Redis 时 Python、Go、Java 三个 GCRA 后端共用 `:gcra` 键、共同计数，nestjs 用固定窗口键、单独计数，同一客户端在 nestjs 与 GCRA 后端上的配额相互独立；parity 环境两边各用独立 Redis |
 | multipart 错误语义（multer / busboy）与 Servlet / commons-fileupload 不同 | 上传错误的状态码与 `message` 和 nestjs 不同 | 关闭 Spring multipart 解析，流式读取 + 显式错误映射，按 files parity 矩阵逐条对照；文本未在 parity 中核实的项先在 nestjs 上实测 |
 | JobRunr 的重试计数、退避公式、job id 去重语义与 BullMQ 不同；JobRunr（Postgres 存储）与 BullMQ 不互通 | 重试次数或间隔与 nestjs 不同；账号清理重复执行或无法再次入队；共用部署时一方投递的任务另一方不会消费 | §8 队列 / 账号清理中的映射；M3 按 JobRunr 9.0.3 源码核对并以集成测试断言尝试次数与间隔 |
 | Handlebars.java 转义与 handlebars.js 不同 | 邮件 HTML 字节与 nestjs 不同 | golden 用例逐字节比对，不一致时自定义 `EscapingStrategy` |
@@ -901,7 +910,7 @@ parity job 是「前端无改动切换」最直接的证据。说明：
 
 ### 15.3 第 2 层：API / 集成测试
 
-- `@SpringBootTest(webEnvironment = MOCK)` + `MockMvcTester`（或 `RestTestClient.bindTo(mockMvc)`），请求与测试方法同线程，过滤器（`JsonBodyFilter`、CORS、安全头）注册进 MockMvc；默认测试方法加 `@Transactional`，**每个测试回滚**（应用内 `@WriteTransaction` 加入测试事务；`REQUIRES_NEW` 的写入会真实提交，涉及它的用例归入下一条）
+- `@SpringBootTest(webEnvironment = MOCK)` + `MockMvcTester`（或 `RestTestClient.bindTo(mockMvc)`），请求与测试方法同线程，过滤器（`JsonBodyFilter`、CORS、安全头）注册进 MockMvc；默认测试方法加 `@Transactional`，**每个测试回滚**（应用内 `@WriteTransaction` 加入测试事务；依赖 4xx 提交语义的用例，如刷新重放吊销，归入下一条）
 - **需要真实提交的测试用克隆库，不用回滚、不用 TRUNCATE**：afterCommit 副作用（发邮件、投递任务）、JobRunr 入队与执行、并发刷新 CAS（多线程各自事务）、§6.3 重放吊销在 401 后仍生效、§5 第 8 项 4xx 提交 / 数据库错误回滚、提交前后清缓存。容器启动后先在模板库 `app_template` 上执行 Flyway 迁移 + seed（模板库本身不被测试连接，否则无法克隆），回滚模式的测试共用一份克隆出的工作库；这类测试每个类（或每个用例）`CREATE DATABASE t_<随机> TEMPLATE app_template` 克隆独立库，`@DynamicPropertySource` 指向它，用完 `DROP`；标 `@Tag("committing")`，可与其它测试并行
 - 容器：一个 `@TestConfiguration(proxyBeanMethods = false)` 声明 `PostgreSQLContainer`（`postgres:18.6-alpine`，与 go-template / fastapi-temp 相同；parity 相关用 17.11）与 Redis 容器，`@ServiceConnection` 自动注入连接；容器单例复用；Docker Desktop 的 socket 不在默认路径时按 fastapi-temp 的做法探测 `~/.docker/run/docker.sock`
 - Redis 状态：键名写死且与 nestjs 逐字相同（`throttle:`、`lock:`、`jwt:session:`、`session:rotated:` …），生产代码不接受键前缀，因此不能按前缀隔离。用到 Redis 的测试从固定大小的逻辑库池（DB 0–15）独占借一个，`@DynamicPropertySource` 设置 `REDIS_DB`，使用前后 `FLUSHDB`；同时运行的此类测试最多 16 个（JUnit `@ResourceLock` 或自定义池）。fastapi-temp 的做法是每个 xdist worker 一个容器、用例内 `flushdb` 后串行执行
