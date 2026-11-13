@@ -1,6 +1,24 @@
+app:
+  env: ${APP_ENV:development}
+  name: ${APP_NAME:app}
+  api-prefix: ${API_PREFIX:api}
+  frontend-domain: ${FRONTEND_DOMAIN:}
+  backend-domain: ${BACKEND_DOMAIN:http://localhost}
+  fallback-language: ${APP_FALLBACK_LANGUAGE:en}
+  swagger-enabled: ${SWAGGER_ENABLED:}
+
 spring:
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.webmvc.autoconfigure.error.ErrorMvcAutoConfiguration
   application:
-    name: ${APP_NAME:springboot-template}
+    name: ${APP_NAME:app}
+  web:
+    resources:
+      add-mappings: false
+  mvc:
+    problemdetails:
+      enabled: false
   main:
     banner-mode: off
   threads:
@@ -13,7 +31,7 @@ spring:
     username: ${DATABASE_USERNAME:root}
     password: ${DATABASE_PASSWORD:secret}
     hikari:
-      maximum-pool-size: ${DATABASE_MAX_CONNECTIONS:100}
+      maximum-pool-size: ${DATABASE_MAX_CONNECTIONS:80}
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -24,6 +42,9 @@ spring:
 server:
   port: ${APP_PORT:3000}
   shutdown: graceful
+  error:
+    whitelabel:
+      enabled: false
 
 management:
   endpoints:

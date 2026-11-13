@@ -11,4 +11,11 @@
 
     <artifactId>template-common-core</artifactId>
     <description>BusinessException、错误键表、通用工具</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-web</artifactId>
+        </dependency>
+    </dependencies>
 </project>

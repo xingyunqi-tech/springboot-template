@@ -17,5 +17,9 @@
             <groupId>tech.xingyunqi.template</groupId>
             <artifactId>template-common-core</artifactId>
         </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-jackson</artifactId>
+        </dependency>
     </dependencies>
 </project>

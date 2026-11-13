@@ -1,5 +1,5 @@
 [files]
-extend-exclude = ["openapi/*.json", "db/*.sql", "tests/contract/fixtures/*.json", "TEMPLATE_PLAN.md", "mvnw", "mvnw.cmd"]
+extend-exclude = ["openapi/*.json", "db/*.sql", "tests/contract/fixtures/*.json", "TEMPLATE_PLAN.md", "mvnw", "mvnw.cmd", "scripts/nestjs/*", "scripts/*.py", "openapi/*.yaml"]
 
 [default]
 extend-ignore-re = ["(PK|FK|UQ|REL|IDX)_[0-9a-f]{20,}"]

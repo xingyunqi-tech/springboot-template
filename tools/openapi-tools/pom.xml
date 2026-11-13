@@ -11,4 +11,15 @@
 
     <artifactId>openapi-tools</artifactId>
     <description>codegen 输入叠加与契约比对（构建期工具）</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>tools.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>tools.jackson.dataformat</groupId>
+            <artifactId>jackson-dataformat-yaml</artifactId>
+        </dependency>
+    </dependencies>
 </project>

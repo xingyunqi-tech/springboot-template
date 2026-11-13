@@ -44,6 +44,7 @@
         <checkstyle.version>14.4.0</checkstyle.version>
         <error-prone.version>2.52.0</error-prone.version>
         <jspecify.version>1.0.1</jspecify.version>
+        <openapi-generator.version>7.27.0</openapi-generator.version>
         <nullaway.version>0.14.3</nullaway.version>
         <palantir-java-format.version>2.103.0</palantir-java-format.version>
 
@@ -378,6 +379,7 @@
                         </includes>
                         <excludes>
                             <exclude>TEMPLATE_PLAN.md</exclude>
+                            <exclude>docs/contract.md</exclude>
                         </excludes>
                         <flexmark/>
                     </markdown>

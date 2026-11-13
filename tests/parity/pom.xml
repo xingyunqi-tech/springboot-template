@@ -11,4 +11,33 @@
 
     <artifactId>tests-parity</artifactId>
     <description>nestjs 与本服务的对照测试（-Pparity，PARITY_TARGETS）</description>
+
+    <properties>
+        <PARITY_TARGETS>java=http://localhost:3000,nestjs=http://localhost:3021</PARITY_TARGETS>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>tools.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <configuration>
+                    <systemPropertyVariables>
+                        <PARITY_TARGETS>${PARITY_TARGETS}</PARITY_TARGETS>
+                    </systemPropertyVariables>
+                    <properties>
+                        <configurationParameters>junit.jupiter.execution.parallel.enabled=false</configurationParameters>
+                    </properties>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
 </project>

@@ -107,13 +107,41 @@
             <artifactId>archunit-junit5</artifactId>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>tools.jackson.dataformat</groupId>
+            <artifactId>jackson-dataformat-yaml</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+            </resource>
+            <resource>
+                <targetPath>openapi</targetPath>
+                <directory>${root.dir}/openapi</directory>
+                <includes>
+                    <include>nestjs-baseline.json</include>
+                    <include>validation.json</include>
+                    <include>nest_handlers.json</include>
+                </includes>
+            </resource>
+        </resources>
         <plugins>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <configuration>
+                    <systemPropertyVariables>
+                        <repo.root>${root.dir}</repo.root>
+                    </systemPropertyVariables>
+                </configuration>
             </plugin>
         </plugins>
     </build>
