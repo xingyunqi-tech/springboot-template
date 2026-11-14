@@ -66,13 +66,13 @@ RuoYi 自带的部门 / 岗位 / 菜单 / 字典后台、数据权限、工作�
 | JSON | Jackson 3 | 3.1.7（Boot 管理） | 包名 `tools.jackson` |
 | 校验 | 请求：自写 class-validator 执行器（`validation.json` 驱动，含 validator.js 移植）；配置：Jakarta Validation（Hibernate Validator） | Boot 管理 | 请求 DTO 不用 Bean Validation 注解，见 §4.3 |
 | 契约 | openapi-generator-maven-plugin（`spring` 生成器） | 7.27.0（2026-11-02） | spec-first，见 §4.3 |
-| 认证 | Spring Security 7（oauth2-resource-server，Nimbus JOSE） | 7.1.2 / nimbus-jose-jwt 10.10 | 见 §6.0 |
+| 认证 | 自写 jsonwebtoken 兼容 JWT（HMAC）+ Spring MVC 拦截器；`spring-security-crypto` 只用于密码哈希 | 7.1.2 | 见 §6.0 |
 | 密码哈希 | Spring Security `Argon2PasswordEncoder` + `BCryptPasswordEncoder` | 7.1.2；BouncyCastle 1.86 | 见 §5 第 1 项 |
 | ORM | **MyBatis-Plus** | 3.5.18.1（`mybatis-plus-spring-boot4-starter`，2026-10-27） | 见 §2.1 |
 | 迁移 | **Flyway** | 12.4.0（Boot 管理；最新 13.12.1） | 跟随 Boot BOM，不单独覆盖 |
 | 驱动 / 连接池 | PostgreSQL JDBC + HikariCP | 42.7.14 / Boot 管理 | |
 | 数据库 | PostgreSQL | 18（18.7） | 独立部署用 18；与 nestjs 共库、parity 对照时用 17（nestjs CI 为 17.11）；镜像标签以 Docker Hub 实际可用为准，测试与 go-template / fastapi-temp 相同用 `postgres:18.6-alpine` / `17.11-alpine` |
-| 缓存 / 锁 / 限流 | Redis + Redisson | 8.10（8.10.3）/ 4.8.0 | Redisson 同时提供 `RedisConnectionFactory`；Caffeine（Boot 管理 3.2.4）只在 `REDIS_ENABLED=false` 时作进程内实现，见 §8 |
+| 缓存 / 锁 / 限流 | Redis + Spring Data Redis（Lettuce，Boot 管理）；Redisson 4.8.0 是否引入在 M3 按锁与 GCRA 脚本的需要决定 | 8.10（8.10.3） | M2 的缓存（`common-redis` 的 `RedisCache`，键与值格式同 nestjs Keyv）用 `StringRedisTemplate`；`REDIS_ENABLED` 不为 `true` 时换成进程内 `MemoryCache`（最多 1 万项，仅开发 / 测试），见 §8 |
 | 队列 + 定时 | **JobRunr**（`jobrunr-spring-boot-4-starter`） | 9.0.3（2026-10-29） | PostgreSQL 存储，重试 + 指数退避 + 集群内单实例 recurring job |
 | HTTP 客户端 | Spring `RestClient` | Framework 7.0.10 | 微信、支付宝、阿里云短信 |
 | 支付宝 | alipay-sdk-java | 4.40.1067.ALL | RSA2 签名 |
@@ -100,7 +100,7 @@ RuoYi 自带的部门 / 岗位 / 菜单 / 字典后台、数据权限、工作�
 | 方案 | 原因 |
 |---|---|
 | Sa-Token | 令牌模型（不透明 token + Redis 会话）与 nestjs 的 access / refresh JWT + 数据库会话 + hash CAS 轮换不一致，sa-token-jwt 也无法产出 `{id, role:{id}, sessionId}` 载荷，用它只剩注解；Spring Security 在 Boot BOM 内，版本与安全公告随 Boot 走 |
-| JJWT | 0.13.0 后（2025-08）无发布；Nimbus 已随 spring-security-oauth2-jose 引入，签发与校验同一库 |
+| JJWT | 0.13.0 后（2025-08）无发布；HMAC 签发 / 校验用 JDK `Mac` 自写即可（§6.0） |
 | springdoc（code-first） | schema 名、paths 顺序、OpenAPI 3.0 写法与 nestjs 逐项对齐成本高，且无法输出本服务未实现的考试接口，见 §4.3 |
 | Spring Data JPA / Hibernate | 共库时表结构归 nestjs，JPA 的实体状态管理、脏检查在「刷新令牌 CAS」「部分唯一索引」场景下反而绕；团队熟悉 MyBatis-Plus |
 | jOOQ | 类型安全最好，但代码生成要连库或解析 DDL，模板使用者学习成本高；列入 §13 待决策 |
@@ -352,7 +352,7 @@ openapi-generator 7.27.0 的 `spring` 生成器提供 `useSpringBoot4`、`useJac
 - 查询参数生成为方法上的独立 `@RequestParam`，与 Orval 的 `XxxParams` 对应；`page` / `limit` 空串视为缺省（Spring `defaultValue` 对空值同样生效）
 - 文件上传：基线以 local 驱动导出，`POST files/upload` 为 `multipart/form-data`、字段名 `file`，由生成接口实现；`FILE_DRIVER=s3-presigned` 时该路径改收 `application/json` `{fileName, fileSize}`，由手写 controller 在同一路径上以 `consumes = application/json` 实现，列入契约反向检查白名单并在 `docs/contract.md` 说明
 - **paths 顺序与 nestjs 一致**：`/docs-json` 输出的就是基线原文
-- **响应视图**：带 `@Expose({groups: ['me', 'admin']})` 的 schema（`User` 等）不用生成 record，经 `schemaMappings` 映射到 `template-views` 中的手写 record：字段按 nestjs 分组标 Jackson `@JsonView(Views.Me.class / Views.Admin.class)`，`MapperFeature.DEFAULT_VIEW_INCLUSION=true`（对应 class-transformer 默认 exposeAll，未分组字段总输出），controller 方法标对应视图；视图内字段 `@JsonInclude(ALWAYS)`，可空字段输出 `null`。其它可空问题用 `codegen-overlay.yaml` 修正。所有映射在 `docs/contract.md` 登记，并有 §15.3 的键存在性测试
+- **响应视图**：带 `@Expose({groups: ['me', 'admin']})` 的 schema（`User` 等）不用生成 record，经 `schemaMappings`（`template-contract/pom.xml`）映射到 `template-views` 中的手写类。`User` 新建时关联只含 `{id}` 且未传时键缺省、已加载时带 `__entity`，`@JsonView` 无法表达，因此 `UserView` 为按序构造的键值对（`@JsonValue`），由 `core/users/web/UserViews` 按 me / admin / public 分组生成；键顺序与基线不同的 `LoginResponseDto` 用带 `@JsonPropertyOrder` 的 record。其它可空问题用 `codegen-overlay.yaml` 修正。所有映射在 `docs/contract.md` 登记，并有 §15.3 的键存在性测试
 - 编译期保障范围：`skipDefaultInterface=true` 只能发现「已有 controller 漏实现某个方法」；整个 `*Api` 接口没有实现类时由 §15.4 的 handler 映射检查发现
 - 契约测试见 §15.4
 
@@ -505,7 +505,7 @@ Spring Boot Actuator 只作内部实现（`HealthContributor`、`PrometheusMeter
 
 | # | 项 | nestjs 现状 | 本模板 |
 |---|---|---|---|
-| 1 | 密码哈希 | bcrypt(md5)，cost 10 | **argon2id(md5)**（OWASP 首选，Spring Security `Argon2PasswordEncoder` + BouncyCastle）；参数取 OWASP 推荐值 m=19456 KiB、t=2、p=1（与 fastapi-temp 1eb15d5 相同）；按哈希前缀识别 `$2a/$2b`（bcrypt）与 `$argon2id`，已有哈希照常验证，登录成功后若格式不是当前 `PASSWORD_HASHER` 或 argon2id 参数（`m` / `t` / `p`）与当前配置不同就重哈希（`Argon2PasswordEncoder.upgradeEncoding` 只在参数更低时返回 true，参数比较自写）。哈希与验证都经过进程内 `Semaphore(PASSWORD_HASH_CONCURRENCY)`：一次 argon2id 占 19MiB，虚拟线程下并发几乎不受限，不限流时 1GB 容器会 OOM。客户端仍传 MD5，前端无感 |
+| 1 | 密码哈希 | bcrypt(md5)，cost 10 | **argon2id(md5)**（OWASP 首选，Spring Security `Argon2PasswordEncoder` + BouncyCastle）；参数取 OWASP 推荐值 m=19456 KiB、t=2、p=1（与 fastapi-temp 1eb15d5 相同）；按哈希前缀识别 `$2a/$2b`（bcrypt）与 `$argon2id`，已有哈希照常验证，登录成功后若格式不是当前 `PASSWORD_HASHER` 或 argon2id 参数（`m` / `t` / `p`）与当前配置不同就重哈希（`Argon2PasswordEncoder.upgradeEncoding` 只在参数更低时返回 true，参数比较自写）。哈希与验证都经过进程内 `Semaphore(PASSWORD_HASH_CONCURRENCY)`：一次 argon2id 占 19MiB，虚拟线程下并发几乎不受限，不限流时 1GB 容器会 OOM。客户端仍传 MD5，前端无感。登录时重哈希会改写 `password` 列，而找回密码令牌内嵌旧哈希的指纹（§6.1）：用户发起找回密码后又用原密码登录并触发重哈希，邮件中的重置链接随即失效（422 `invalidHash`），需重新发起；nestjs 登录不改写密码列，没有这个现象 |
 | 2 | 会话 | 已同步到 nestjs | 会话表可空列 `userAgent`（≤512）、`ip`、`lastActiveAt`（每会话最多 5 分钟写一次）；「我的设备」列表、下线指定设备、下线其他设备三个接口，见 §4.6 |
 | 3 | 数据库迁移 | 每个应用容器启动时跑 `migration:run` | 独立一次性 `migrate` 容器（同一镜像，`APP_ROLE=migrate` 只跑 Flyway 后退出），应用 `depends_on: service_completed_successfully`；api / worker 设 `spring.flyway.enabled=false` |
 | 4 | 限流算法 | 固定窗口（`INCR` + `PEXPIRE`，超限后按 TTL 封禁） | Redis Lua **GCRA**（Redisson `RScript`，平滑、无窗口边界突刺；脚本内用 Redis `TIME` 取时间，键值为理论到达时间 TAT（毫秒十进制字符串，与 fastapi-temp 相同），`SET … PX`；内部判定用整数微秒，见 §4.1「限流细则」GCRA 计算），进程内回落实现同算法且限制键数量；响应头名与出现条件与 nestjs 的 @nestjs/throttler 一致（§4.1「限流细则」）。键为 nestjs 计数键加 `:gcra` 后缀（`throttle:<sha>:default:gcra`），不与 nestjs 的 `INCR` 计数冲突；共用 Redis 时 Python、Go、Java 三个 GCRA 后端共用 `:gcra` 键、共同计数，nestjs 用固定窗口键、单独计数，见 §14 |
@@ -516,7 +516,7 @@ Spring Boot Actuator 只作内部实现（`HealthContributor`、`PrometheusMeter
 | 9 | 优雅停机 | 依赖 Nest 默认 | `server.shutdown=graceful` + `spring.lifecycle.timeout-per-shutdown-phase`；JobRunr 停机等待在途任务；容器 `stop_grace_period` 与之匹配 |
 | 10 | 配置校验 | 运行时按模块校验 | 全部 `@ConfigurationProperties` + `@Validated`；启动时自定义校验器汇总全部缺失项一次性报错退出 |
 | 11 | 语言头 | 已同步到 nestjs（`AcceptLanguageResolver`） | 标准头 `Accept-Language`，见 §4.2 |
-| 12 | 测试隔离 | e2e 连真实服务、串行执行 | 集成测试用 Testcontainers 起 Postgres / Redis；大部分测试在测试事务内执行后回滚（应用内的事务加入测试事务，见 §15.3）；依赖真实提交的测试从已迁移 + seed 的模板库 `CREATE DATABASE … TEMPLATE` 克隆独立库，不用 TRUNCATE；可并行，见 §15 |
+| 12 | 测试隔离 | e2e 连真实服务、串行执行 | 集成测试用 Testcontainers 起 Postgres / Redis；容器启动后在模板库上执行 Flyway 迁移 + seed，每个 Spring 测试上下文 `CREATE DATABASE … TEMPLATE` 克隆一个独立库（不用 TRUNCATE、不用测试事务回滚），测试按真实提交运行；可并行，见 §15.3 |
 | 13 | 并发模型 | 单线程事件循环 | **虚拟线程**（`spring.threads.virtual.enabled=true`）；JDK 24 起 `synchronized` 不再钉住载体线程（JEP 491），这是选 25 而非 21 的主要原因；连接池大小仍是数据库并发上限，也是虚拟线程模式下真正的瓶颈：同一请求在持有一个连接时不得再申请第二个连接（不用 `REQUIRES_NEW`、不另开独立连接），否则并发数达到池大小时所有请求互相等待，满 30s 后失败 |
 
 第 1 项与「两个后端共用同一个库」有冲突（nestjs 无法验证 argon2id）：共用期间设 `PASSWORD_HASHER=bcrypt`，独立部署时用默认 `argon2id`。第 2、5、11 项与限流响应头已在 nestjs 实现，属于共同契约。
@@ -525,7 +525,7 @@ Spring Boot Actuator 只作内部实现（`HealthContributor`、`PrometheusMeter
 
 ## 6. 认证与权限
 
-### 6.0 选型：Spring Security 7 + Nimbus JOSE（不用 Sa-Token）
+### 6.0 选型：自写 JWT + MVC 拦截器（不用 Sa-Token，未采用 Spring Security 过滤器链）
 
 | 需求 | Spring Security 7 | Sa-Token 1.46.0 |
 |---|---|---|
@@ -536,7 +536,7 @@ Spring Boot Actuator 只作内部实现（`HealthContributor`、`PrometheusMeter
 | 权限注解 | `@RequirePermissions` / `@RequireAnyPermission` + 自定义 `AuthorizationManager`（方法安全） | `@SaCheckPermission` |
 | 版本与安全公告 | Boot BOM 管理 | 单独跟踪 |
 
-结论：Sa-Token 能提供的只剩注解，其余都要重写；选 Spring Security。
+结论：Sa-Token 能提供的只剩注解，其余都要重写，不选。M2 实现时 Spring Security 的过滤器链也未采用：Nimbus 的 HMAC 签名 / 校验要求密钥至少 256 位，nestjs 开发与 parity 环境的密钥是 `secret` 这类短字符串，用它无法与 nestjs 互认令牌。实际做法：自写与 jsonwebtoken 兼容的 HS256 签发与 HS256/384/512 校验（`common-security` 的 `Jwt`、`Ms`），鉴权与权限守卫在 Spring MVC `HandlerInterceptor` 中按 handler 注解执行（已解析出 handler、尚未做参数校验，顺序与 nestjs 守卫 → 管道一致）；只引入 `spring-security-crypto` 做 argon2id / bcrypt。
 
 ### 6.1 JWT
 
@@ -559,12 +559,7 @@ Spring Boot Actuator 只作内部实现（`HealthContributor`、`PrometheusMeter
 
 会话被删除（logout、吊销、改密删除其它会话、重放吊销）时，`jwt:session:{id}` 缓存**在写库后立即清除一次，并在事务提交后（`afterCommit`）再清除一次**：只在提交前清除时，并发请求可能在提交前从库中读到旧会话并回填缓存，令已删除会话在 30s 内仍可用。
 
-**Java 侧过滤器链**（`BearerTokenAuthenticationFilter` 只要请求带 Bearer 头就会解析并在失败时直接 401，即使路由是 `permitAll`，因此不能只靠 `permitAll`）：
-
-| 链 | 匹配 | 配置 |
-|---|---|---|
-| refresh 链（`@Order(1)`） | `securityMatcher("/api/v1/auth/refresh")` | `oauth2ResourceServer().jwt()` 使用 refresh 密钥的 `JwtDecoder`；认证后交给 controller 做 §6.3 的轮换 |
-| 主链（`@Order(2)`） | 其余全部 | 无状态，关闭 CSRF / 表单登录 / session；access 解码器 + 上面的会话转换器；自定义 `BearerTokenResolver`：只对「需要鉴权」和「可选鉴权」的路由返回令牌，公开路由一律返回 null（忽略 `Authorization` 头）；可选鉴权路由令牌无效时的处理与 nestjs 可选守卫一致（M2 以 parity 用例确认） |
+**Java 侧实现**：`RouteAuthInterceptor`（`HandlerInterceptor`）按 handler 上的鉴权注解处理：公开路由忽略 `Authorization` 头；`@AuthenticatedOnly` 校验 access 令牌并调用会话校验（上述规则）；`@OptionalAuth` 令牌缺失或任何校验失败都按匿名处理（nestjs OptionalJwtAuthGuard）；`@RefreshTokenAuth` 用 refresh 密钥校验并要求载荷有 `sessionId`。Bearer 头按 passport-jwt 的 `/(\S+)\s+(\S+)/` 提取，scheme 不区分大小写。主体放在请求属性中，controller 经 `AuthContext` 读取。
 
 路由声明分两个互相独立的维度，都写在实现方法（或类）上：
 
@@ -573,7 +568,7 @@ Spring Boot Actuator 只作内部实现（`HealthContributor`、`PrometheusMeter
 | 鉴权（authentication） | `@PublicEndpoint`、`@OptionalAuth`、`@AuthenticatedOnly`（JWT）、`@MonitoringToken`（`healthCheck`、`/metrics`）；refresh 由独立链处理 | 每个 handler 必须且只能有一个，缺少即启动失败（默认拒绝） |
 | 授权（RBAC） | `@PermissionsGuarded` + `@RequirePermissions` / `@RequireAnyPermission` | 只对应 nestjs 使用 `PermissionsGuard` 的路由；`auth/me` 这类仅 JWT 的路由不需要也不应有权限声明；带 `@PermissionsGuarded` 却没有权限列表的路由运行时返回 403（与 nestjs `No permission declared for this route` 一致），启动时打印告警 |
 
-`BearerTokenResolver` 与授权规则都从这份注册表读取。哪些 operation 走权限守卫、需要哪些权限，记录在 `scope.yaml` 的 `permissions` 字段（照抄 nestjs controller），契约测试比对注册表与它；spec 中的 `security` 只交叉核对鉴权维度（§15.4）。
+拦截器与授权规则都从这些注解读取，启动时遍历全部 handler 校验声明。哪些 operation 走权限守卫、需要哪些权限，记录在 `scope.yaml` 的 `permissions` 字段（照抄 nestjs controller），契约测试比对注册表与它；spec 中的 `security` 只交叉核对鉴权维度（§15.4）。
 
 ### 6.3 刷新轮换
 
@@ -693,7 +688,8 @@ Spring Boot Actuator 只作内部实现（`HealthContributor`、`PrometheusMeter
 | `MAIL_HOST` / `MAIL_PORT` / `MAIL_USER` / `MAIL_PASSWORD` / `MAIL_DEFAULT_EMAIL` / `MAIL_DEFAULT_NAME` / `MAIL_IGNORE_TLS` / `MAIL_SECURE` / `MAIL_REQUIRE_TLS` | `MAIL_PORT` 587，三个布尔只认 `true` | nestjs 任何环境都要求 `MAIL_HOST`、`MAIL_DEFAULT_EMAIL`、`MAIL_DEFAULT_NAME`；本服务与 fastapi-temp 一样只在生产强制，非生产未设置 `MAIL_HOST` 时邮件只写日志 |
 | `SWAGGER_ENABLED` | 非生产 `true`、生产 `false` | 控制 `/docs`、`/docs-json` |
 | `APP_FALLBACK_LANGUAGE` | `en` | 语言回落 |
-| `DATABASE_MAX_CONNECTIONS` | `80`（nestjs 为 100） | 所有 API 进程合计的连接上限（与 fastapi-temp 1eb15d5 同义）；Java 单进程，直接作为 api 进程 Hikari `maximumPoolSize`，多副本部署时每个副本设为合计值 / 副本数。api 进程内 JobRunr 的入队与存储读写共用该连接池，计入此值。worker 进程（`APP_ROLE=worker`，JobRunr background server，§8「进程」）是独立 JVM，连接池由 `WORKER_DATABASE_MAX_CONNECTIONS`（默认 `10`，与 fastapi-temp 同名同义）决定。约束：**API 合计 + worker 合计 + migrate / seed ≤ Postgres `max_connections`**（默认 100，另扣超级用户保留连接 3 个）；默认 80 给 worker 与迁移留出余量，nestjs 的 100 在加上这两部分后会超过上限；虚拟线程模式下连接池是真正的并发上限（§5 第 13 项） |
+| `DATABASE_MAX_CONNECTIONS` | `80`（与 nestjs 05c3756 一致） | 所有 API 进程合计的连接上限（与 fastapi-temp 1eb15d5 同义）；Java 单进程，直接作为 api 进程 Hikari `maximumPoolSize`，多副本部署时每个副本设为合计值 / 副本数。api 进程内 JobRunr 的入队与存储读写共用该连接池，计入此值。worker 进程（`APP_ROLE=worker`，JobRunr background server，§8「进程」）是独立 JVM，连接池由 `WORKER_DATABASE_MAX_CONNECTIONS`（默认 `10`，与 fastapi-temp 同名同义）决定。约束：**API 合计 + worker 合计 + migrate / seed ≤ Postgres `max_connections`**（默认 100，另扣超级用户保留连接 3 个）；默认 80 给 worker 与迁移留出余量；虚拟线程模式下连接池是真正的并发上限（§5 第 13 项） |
+| `DATABASE_CONNECTION_TIMEOUT_MS` | `10000` | 从连接池获取连接的超时（毫秒），对应 Hikari `connectionTimeout`，与 nestjs 05c3756 同名同义；**下限 250**，低于 250（含 0、负数）启动失败。nestjs 只要求正整数，这里更严是因为 Hikari 对 0 视为无限等待、对小于 250 的值静默改用 30000 |
 | `AUTH_JWT_TOKEN_EXPIRES_IN` 等 `*_EXPIRES_IN` | `15m` / `3650d` / `30m` / `1d` | 按 npm `ms` 规则解析（§6.1） |
 | `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` | 空 | 仅生产 seed 使用（§7「Seed」）；nestjs 侧生产判定变量为 `ENV_MODE=prod`，本服务为 `APP_ENV=production` |
 
@@ -844,7 +840,7 @@ parity job 是「前端无改动切换」最直接的证据。说明：
 | 2 | 仓库与历史 | **已定（2026-11-11）：新建仓库**。`springboot-template` 为空仓库（分支 `main`），本地不保留 RuoYi 克隆，需要时查阅上游仓库 `github.com/dromara/RuoYi-Vue-Plus`（分支 6.X，提交 `835246e`）；未采用的备选：在 RuoYi 克隆中建 orphan 分支 |
 | 3 | JDK 25 还是 21 | 25（LTS、虚拟线程 JEP 491、Boot 4.1 支持）；27 非 LTS 不选 |
 | 4 | OpenAPI 策略 | spec-first（§4.3）；备选 code-first springdoc + 契约测试 |
-| 5 | 认证框架 | Spring Security 7 + Nimbus（§6.0）；备选 Sa-Token |
+| 5 | 认证框架 | 自写 jsonwebtoken 兼容 JWT + MVC 拦截器，`spring-security-crypto` 做密码哈希（§6.0，M2 定）；备选 Sa-Token |
 | 6 | 持久层 | MyBatis-Plus；备选 jOOQ（类型安全 SQL，代码生成可基于 Flyway DDL 离线解析） |
 | 7 | groupId / 包名 | 由用户指定；占位 `com.example.template` |
 | 8 | 是否与 nestjs 共用表结构（camelCase 列名） | 共用，便于切换与对照测试；实际共库时 `DB_SCHEMA_OWNER=external`（表结构归 nestjs，§7）、`PASSWORD_HASHER=bcrypt` |
@@ -904,14 +900,14 @@ parity job 是「前端无改动切换」最直接的证据。说明：
 
 ### 15.2 第 1 层：单元测试
 
-- 范围：service（mock 端口接口）、过滤器 / 拦截器 / advice / 返回值处理器（`ApiResponseAdvice`、`VoidEnvelopeReturnValueHandler`、`GlobalExceptionHandler` 及翻译规则、Request ID 过滤器、`LocaleResolver`、`BearerTokenResolver` 路由判定、GCRA 脚本参数计算）、工具（UUIDv7、`UtcInstantSerializer`、MD5 校验、密码哈希识别与重哈希、422 嵌套 map 构造、唯一约束表、`ms` 解析与 `exp` 计算）、`ClassValidatorEngine`（validator.js 移植函数的单测 + `validation-cases.json` 全部用例，后者属契约层门禁）、JWT 签发与解析（两种 `role` 形状）、openapi-tools 的叠加
+- 范围：service（mock 端口接口）、过滤器 / 拦截器 / advice / 返回值处理器（`ApiResponseAdvice`、`VoidEnvelopeReturnValueHandler`、`GlobalExceptionHandler` 及翻译规则、Request ID 过滤器、`LocaleResolver`、`RouteAuthInterceptor` 路由判定、GCRA 脚本参数计算）、工具（UUIDv7、`UtcInstantSerializer`、MD5 校验、密码哈希识别与重哈希、422 嵌套 map 构造、唯一约束表、`ms` 解析与 `exp` 计算）、`ClassValidatorEngine`（validator.js 移植函数的单测 + `validation-cases.json` 全部用例，后者属契约层门禁）、JWT 签发与解析（两种 `role` 形状）、openapi-tools 的叠加
 - 约定：不起 Spring 上下文；`@ExtendWith(MockitoExtension.class)` + AssertJ；时间用注入的 `Clock`；测试名只陈述行为（`@DisplayName("刷新令牌 hash 等于刚轮换掉的旧值时返回 401 且不吊销会话")`）
 - 并行：`junit.jupiter.execution.parallel.enabled=true`
 
 ### 15.3 第 2 层：API / 集成测试
 
-- `@SpringBootTest(webEnvironment = MOCK)` + `MockMvcTester`（或 `RestTestClient.bindTo(mockMvc)`），请求与测试方法同线程，过滤器（`JsonBodyFilter`、CORS、安全头）注册进 MockMvc；默认测试方法加 `@Transactional`，**每个测试回滚**（应用内 `@WriteTransaction` 加入测试事务；依赖 4xx 提交语义的用例，如刷新重放吊销，归入下一条）
-- **需要真实提交的测试用克隆库，不用回滚、不用 TRUNCATE**：afterCommit 副作用（发邮件、投递任务）、JobRunr 入队与执行、并发刷新 CAS（多线程各自事务）、§6.3 重放吊销在 401 后仍生效、§5 第 8 项 4xx 提交 / 数据库错误回滚、提交前后清缓存。容器启动后先在模板库 `app_template` 上执行 Flyway 迁移 + seed（模板库本身不被测试连接，否则无法克隆），回滚模式的测试共用一份克隆出的工作库；这类测试每个类（或每个用例）`CREATE DATABASE t_<随机> TEMPLATE app_template` 克隆独立库，`@DynamicPropertySource` 指向它，用完 `DROP`；标 `@Tag("committing")`，可与其它测试并行
+- `@SpringBootTest(webEnvironment = MOCK)` + MockMvc，请求与测试方法同线程，过滤器（`JsonBodyFilter`、CORS、安全头）注册进 MockMvc；测试按真实提交运行（不加 `@Transactional`），同一类内的用例各自注册临时用户，不依赖彼此留下的数据
+- **克隆库**：`support/TestDatabase` 启动容器后在模板库 `template_seeded` 上执行 Flyway 迁移 + seed（模板库本身不被测试连接，否则无法克隆）；`TestcontainersConfiguration` 为每个 Spring 上下文 `CREATE DATABASE ctx_<n> TEMPLATE template_seeded` 并用 `DynamicPropertyRegistrar` 指向它。afterCommit 副作用、并发刷新 CAS、§6.3 重放吊销在 401 后仍生效、§5 第 8 项 4xx 提交 / 回滚、提交前后清缓存都在这种模式下直接测；默认 `REDIS_ENABLED` 未开启（进程内缓存），Redis 相关用例单独开一个上下文设 `REDIS_ENABLED=true`
 - 容器：一个 `@TestConfiguration(proxyBeanMethods = false)` 声明 `PostgreSQLContainer`（`postgres:18.6-alpine`，与 go-template / fastapi-temp 相同；parity 相关用 17.11）与 Redis 容器，`@ServiceConnection` 自动注入连接；容器单例复用；Docker Desktop 的 socket 不在默认路径时按 fastapi-temp 的做法探测 `~/.docker/run/docker.sock`
 - Redis 状态：键名写死且与 nestjs 逐字相同（`throttle:`、`lock:`、`jwt:session:`、`session:rotated:` …），生产代码不接受键前缀，因此不能按前缀隔离。用到 Redis 的测试从固定大小的逻辑库池（DB 0–15）独占借一个，`@DynamicPropertySource` 设置 `REDIS_DB`，使用前后 `FLUSHDB`；同时运行的此类测试最多 16 个（JUnit `@ResourceLock` 或自定义池）。fastapi-temp 的做法是每个 xdist worker 一个容器、用例内 `flushdb` 后串行执行
 - 文件：local 驱动写工作目录下 `./files`（与 nestjs 相同），存储根目录做成可注入的 bean 属性，测试指向 `@TempDir`；s3 / s3-presigned 用 Testcontainers MinIO 模块（单例容器、每个测试类独立桶）
