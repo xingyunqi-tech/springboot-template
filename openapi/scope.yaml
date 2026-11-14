@@ -1,3 +1,28 @@
 operations:
   - getAppInfo
   - simpleHealthCheck
+  - loginWithEmail
+  - registerWithEmail
+  - confirmEmail
+  - confirmNewEmail
+  - forgotPassword
+  - resetPassword
+  - getCurrentUser
+  - updateCurrentUser
+  - deleteCurrentUser
+  - refreshToken
+  - logout
+  - changePassword
+  - getMySessions
+  - revokeMySession
+  - revokeOtherSessions
+  - operationId: createUser
+    permissions: [user:create]
+  - operationId: getUsers
+    permissions: [user:list]
+  - operationId: getUser
+    permissions: [user:read]
+  - operationId: updateUser
+    permissions: [user:update]
+  - operationId: deleteUser
+    permissions: [user:delete]

@@ -2,38 +2,18 @@
 
 本文件由 `template-app` 的 `OpenApiContractIT` 生成（`UPDATE_CONTRACT_DOC=1 make test-contract`），与实际不符时测试失败；「与 nestjs 的行为差异」一节为手写，生成时原样保留。
 
-## 基线中未实现的接口（217 个）
+## 基线中未实现的接口（197 个）
 
 请求这些接口返回 404 信封 `Cannot <METHOD> <path>`。
 
 | 方法 | 路径 | operationId | tag |
 |---|---|---|---|
-| GET | `/api/v1/users` | getUsers | Users |
-| POST | `/api/v1/users` | createUser | Users |
-| GET | `/api/v1/users/{id}` | getUser | Users |
-| PUT | `/api/v1/users/{id}` | updateUser | Users |
-| DELETE | `/api/v1/users/{id}` | deleteUser | Users |
 | POST | `/api/v1/files/upload` | uploadFile | Files |
-| POST | `/api/v1/auth/email/login` | loginWithEmail | Auth |
-| POST | `/api/v1/auth/email/register` | registerWithEmail | Auth |
-| POST | `/api/v1/auth/email/confirm` | confirmEmail | Auth |
-| POST | `/api/v1/auth/email/confirm/new` | confirmNewEmail | Auth |
-| POST | `/api/v1/auth/forgot/password` | forgotPassword | Auth |
-| POST | `/api/v1/auth/reset/password` | resetPassword | Auth |
-| GET | `/api/v1/auth/me` | getCurrentUser | Auth |
-| PUT | `/api/v1/auth/me` | updateCurrentUser | Auth |
-| DELETE | `/api/v1/auth/me` | deleteCurrentUser | Auth |
-| POST | `/api/v1/auth/refresh` | refreshToken | Auth |
-| GET | `/api/v1/auth/sessions` | getMySessions | Auth |
-| DELETE | `/api/v1/auth/sessions/{id}` | revokeMySession | Auth |
-| POST | `/api/v1/auth/sessions/revoke-others` | revokeOtherSessions | Auth |
-| POST | `/api/v1/auth/logout` | logout | Auth |
 | POST | `/api/v1/auth/phone/send-code` | sendSmsCode | Auth |
 | POST | `/api/v1/auth/phone/login` | loginWithPhone | Auth |
 | POST | `/api/v1/auth/phone/sms-login` | loginWithSms | Auth |
 | POST | `/api/v1/auth/phone/register` | registerWithPhone | Auth |
 | POST | `/api/v1/auth/phone/reset-password` | resetPasswordByPhone | Auth |
-| PUT | `/api/v1/auth/password` | changePassword | Auth |
 | POST | `/api/v1/auth/wechat/login` | loginWithWechat | Auth |
 | POST | `/api/v1/auth/wechat/phone-login` | loginWithWechatPhone | Auth |
 | POST | `/api/v1/auth/alipay/login` | loginWithAlipay | Auth |
@@ -238,3 +218,12 @@
 - 请求体 JSON 语法错误时 400 的 `message` 为 Jackson 的错误文本，nestjs 为 V8 `JSON.parse` 的错误文本（方案约定 parity 只比对 `code` 与 `data`）。
 - 204 预检响应不带 `Content-Length: 0` 与 `X-Powered-By`（Tomcat 对 204 不输出前者）；HTTP 状态行不带原因短语。三者都不在契约比对范围内。
 - `GET /api/health` 的 `memory` 取 JVM 堆已用 / 已提交与进程常驻内存，`node` 为 `Java <版本>`；键名与类型与 nestjs 一致，数值不属于契约。
+- 邮件在事务提交后发送（M3 起经队列异步发送），SMTP 失败不影响接口响应；nestjs 在请求内同步发送，SMTP 失败时接口 500。
+- 会话列表的 `ip` 取 Tomcat 的远端地址（IPv4 为点分形式）；nestjs 在双栈监听时为 `::ffff:` 前缀形式。parity 将 `ip` 视为易变字段。
+
+## 响应视图映射（schemaMappings）
+
+| 基线 schema | 映射到 | 原因 |
+|---|---|---|
+| `User` | `tech.xingyunqi.template.views.UserView` | `@Expose({groups})` 分组导致的键缺省、关联的 `__entity`、新建时关联只含 `{id}`，按 nestjs ClassSerializerInterceptor 的输出逐键构造 |
+| `LoginResponseDto` | `tech.xingyunqi.template.views.LoginResponseView` | nestjs 实际键顺序为 `refreshToken, token, tokenExpires, user`，与基线声明顺序不同 |

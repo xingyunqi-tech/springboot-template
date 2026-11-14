@@ -1,0 +1,2 @@
+org.springframework.boot.EnvironmentPostProcessor=\
+tech.xingyunqi.template.cli.AppRole

@@ -28,6 +28,7 @@ import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.method.HandlerMethod;
 import org.springframework.web.servlet.mvc.method.RequestMappingInfo;
 import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
+import tech.xingyunqi.template.common.security.route.RouteAuth;
 import tech.xingyunqi.template.common.web.docs.DocsController;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
@@ -145,6 +146,62 @@ class OpenApiContractIT {
         Set<String> baselineIds = new LinkedHashSet<>();
         baselineOperations().forEach(operation -> baselineIds.add(operation.operationId()));
         assertThat(baselineIds).containsAll(SCOPE);
+    }
+
+    static Map<String, List<String>> scopePermissions() {
+        try {
+            JsonNode root = YAMLMapper.builder().build().readTree(Files.readString(ROOT.resolve("openapi/scope.yaml")));
+            Map<String, List<String>> permissions = new LinkedHashMap<>();
+            for (JsonNode entry : root.path("operations")) {
+                if (!entry.isString()) {
+                    JsonNode list = entry.has("permissions") ? entry.path("permissions") : entry.path("anyPermissions");
+                    permissions.put(
+                            entry.path("operationId").stringValue(),
+                            list.valueStream().map(JsonNode::stringValue).toList());
+                }
+            }
+            return permissions;
+        } catch (IOException e) {
+            throw new java.io.UncheckedIOException(e);
+        }
+    }
+
+    @Test
+    @DisplayName("基线带 security 的 operation 不是公开路由，不带的是公开路由")
+    void authenticationMatchesBaselineSecurity() {
+        Map<String, HandlerMethod> handlers = handlers();
+        List<String> mismatched = new ArrayList<>();
+        for (Operation operation : baselineOperations()) {
+            HandlerMethod handler = handlers.get(operation.key());
+            if (handler == null || !SCOPE.contains(operation.operationId())) {
+                continue;
+            }
+            boolean secured = !operation.node().path("security").isEmpty();
+            boolean isPublic = RouteAuth.of(handler).mode() == RouteAuth.Mode.PUBLIC;
+            if (secured == isPublic) {
+                mismatched.add(operation.operationId());
+            }
+        }
+        assertThat(mismatched).isEmpty();
+    }
+
+    @Test
+    @DisplayName("权限守卫与 scope.yaml 的 permissions 一致")
+    void permissionsMatchScope() {
+        Map<String, List<String>> expected = scopePermissions();
+        Map<String, HandlerMethod> handlers = handlers();
+        Map<String, List<String>> actual = new LinkedHashMap<>();
+        for (Operation operation : baselineOperations()) {
+            HandlerMethod handler = handlers.get(operation.key());
+            if (handler == null || !SCOPE.contains(operation.operationId())) {
+                continue;
+            }
+            RouteAuth route = RouteAuth.of(handler);
+            if (route.guarded()) {
+                actual.put(operation.operationId(), route.permissions());
+            }
+        }
+        assertThat(actual).isEqualTo(expected);
     }
 
     @Test

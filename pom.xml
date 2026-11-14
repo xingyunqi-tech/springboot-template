@@ -41,9 +41,11 @@
         <root.dir>${maven.multiModuleProjectDirectory}</root.dir>
 
         <archunit.version>1.5.1</archunit.version>
+        <bouncycastle.version>1.86</bouncycastle.version>
         <checkstyle.version>14.4.0</checkstyle.version>
         <error-prone.version>2.52.0</error-prone.version>
         <jspecify.version>1.0.1</jspecify.version>
+        <mybatis-plus.version>3.5.18.1</mybatis-plus.version>
         <openapi-generator.version>7.27.0</openapi-generator.version>
         <nullaway.version>0.14.3</nullaway.version>
         <palantir-java-format.version>2.103.0</palantir-java-format.version>
@@ -59,7 +61,7 @@
 
         <spring-boot.run.skip>true</spring-boot.run.skip>
         <argLine/>
-        <errorprone.args>-Xplugin:ErrorProne -XepDisableWarningsInGeneratedCode -XepExcludedPaths:.*/target/generated-sources/.* -Xep:NullAway:ERROR -XepOpt:NullAway:AnnotatedPackages=${base.package} -XepOpt:NullAway:JSpecifyMode=true</errorprone.args>
+        <errorprone.args>-Xplugin:ErrorProne -XepDisableWarningsInGeneratedCode -XepExcludedPaths:.*/target/generated-sources/.* -Xep:NullAway:ERROR -XepOpt:NullAway:AnnotatedPackages=${base.package} -XepOpt:NullAway:UnannotatedSubPackages=${base.package}.contract -XepOpt:NullAway:JSpecifyMode=true</errorprone.args>
         <errorprone.test.args>-Xplugin:ErrorProne -XepDisableWarningsInGeneratedCode -XepExcludedPaths:.*/target/generated-sources/.* -Xep:NullAway:OFF</errorprone.test.args>
     </properties>
 
@@ -139,6 +141,18 @@
                 <groupId>org.jspecify</groupId>
                 <artifactId>jspecify</artifactId>
                 <version>${jspecify.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.baomidou</groupId>
+                <artifactId>mybatis-plus-bom</artifactId>
+                <version>${mybatis-plus.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.bouncycastle</groupId>
+                <artifactId>bcprov-jdk18on</artifactId>
+                <version>${bouncycastle.version}</version>
             </dependency>
             <dependency>
                 <groupId>com.tngtech.archunit</groupId>

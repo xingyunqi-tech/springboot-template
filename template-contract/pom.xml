@@ -22,6 +22,14 @@
             <artifactId>spring-web</artifactId>
         </dependency>
         <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-context</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>tech.xingyunqi.template</groupId>
+            <artifactId>template-views</artifactId>
+        </dependency>
+        <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-annotations</artifactId>
         </dependency>
@@ -85,11 +93,15 @@
                             <generateApiDocumentation>false</generateApiDocumentation>
                             <generateModelDocumentation>false</generateModelDocumentation>
                             <typeMappings>
-                                <typeMapping>OffsetDateTime=Instant</typeMapping>
+                                <typeMapping>DateTime=Instant</typeMapping>
                             </typeMappings>
                             <importMappings>
                                 <importMapping>Instant=java.time.Instant</importMapping>
                             </importMappings>
+                            <schemaMappings>
+                                <schemaMapping>User=tech.xingyunqi.template.views.UserView</schemaMapping>
+                                <schemaMapping>LoginResponseDto=tech.xingyunqi.template.views.LoginResponseView</schemaMapping>
+                            </schemaMappings>
                             <configOptions>
                                 <interfaceOnly>true</interfaceOnly>
                                 <skipDefaultInterface>true</skipDefaultInterface>

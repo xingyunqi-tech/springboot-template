@@ -1,0 +1,6 @@
+app:
+  auth:
+    secret: test-access-secret
+    refresh-secret: test-refresh-secret
+    forgot-secret: test-forgot-secret
+    confirm-email-secret: test-confirm-email-secret

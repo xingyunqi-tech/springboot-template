@@ -8,10 +8,12 @@ import org.springframework.web.bind.annotation.RestController;
 import tech.xingyunqi.template.common.web.envelope.RawResponse;
 import tech.xingyunqi.template.common.web.http.JsonResponses;
 import tech.xingyunqi.template.common.web.http.Routes;
+import tech.xingyunqi.template.common.web.route.PublicEndpoint;
 
 /** {@code /docs-json} 逐字节输出 nestjs 基线，{@code /docs} 为指向它的 Scalar 页面；关闭时两者 404。 */
 @RestController
 @RawResponse
+@PublicEndpoint
 public class DocsController {
 
     static final String SCALAR_VERSION = "1.76.0";

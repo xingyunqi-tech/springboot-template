@@ -59,6 +59,19 @@ final class Parity {
                 send(targets.get("nestjs"), method, path, headers, body));
     }
 
+    /** 两侧分别使用各自的路径与请求头（如各自的令牌、各自的 id）。 */
+    Pair requestEach(
+            String method,
+            String javaPath,
+            Map<String, String> javaHeaders,
+            String nestjsPath,
+            Map<String, String> nestjsHeaders,
+            byte[] body) {
+        return new Pair(
+                send(targets.get("java"), method, javaPath, javaHeaders, body),
+                send(targets.get("nestjs"), method, nestjsPath, nestjsHeaders, body));
+    }
+
     Pair request(String method, String path) {
         return request(method, path, Map.of(), new byte[0]);
     }

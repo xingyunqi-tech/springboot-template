@@ -29,6 +29,7 @@ import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandl
 import org.springframework.web.util.pattern.PathPatternParser;
 import tech.xingyunqi.template.common.web.bind.IdPathVariableResolver;
 import tech.xingyunqi.template.common.web.bind.ValidatedBodyArgumentResolver;
+import tech.xingyunqi.template.common.web.bind.ValidatedQuery;
 import tech.xingyunqi.template.common.web.docs.DocsController;
 import tech.xingyunqi.template.common.web.envelope.ApiResponseAdvice;
 import tech.xingyunqi.template.common.web.envelope.VoidEnvelopeReturnValueHandler;
@@ -109,6 +110,11 @@ public class WebAutoConfiguration implements WebMvcConfigurer {
     @Bean
     ApiResponseAdvice apiResponseAdvice(JsonMapper mapper) {
         return new ApiResponseAdvice(mapper);
+    }
+
+    @Bean
+    ValidatedQuery validatedQuery(ClassValidatorEngine engine, JsonMapper mapper) {
+        return new ValidatedQuery(engine, mapper);
     }
 
     @Bean

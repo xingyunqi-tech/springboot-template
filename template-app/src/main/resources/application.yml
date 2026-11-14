@@ -6,6 +6,23 @@ app:
   backend-domain: ${BACKEND_DOMAIN:http://localhost}
   fallback-language: ${APP_FALLBACK_LANGUAGE:en}
   swagger-enabled: ${SWAGGER_ENABLED:}
+  trust-proxy: ${TRUST_PROXY:0}
+  database:
+    connection-timeout-ms: ${DATABASE_CONNECTION_TIMEOUT_MS:10000}
+  seed:
+    admin-email: ${SEED_ADMIN_EMAIL:}
+    admin-password: ${SEED_ADMIN_PASSWORD:}
+  auth:
+    secret: ${AUTH_JWT_SECRET:}
+    expires: ${AUTH_JWT_TOKEN_EXPIRES_IN:15m}
+    refresh-secret: ${AUTH_REFRESH_SECRET:}
+    refresh-expires: ${AUTH_REFRESH_TOKEN_EXPIRES_IN:3650d}
+    forgot-secret: ${AUTH_FORGOT_SECRET:}
+    forgot-expires: ${AUTH_FORGOT_TOKEN_EXPIRES_IN:30m}
+    confirm-email-secret: ${AUTH_CONFIRM_EMAIL_SECRET:}
+    confirm-email-expires: ${AUTH_CONFIRM_EMAIL_TOKEN_EXPIRES_IN:1d}
+    password-hasher: ${PASSWORD_HASHER:argon2id}
+    password-hash-concurrency: ${PASSWORD_HASH_CONCURRENCY:2}
 
 spring:
   autoconfigure:
@@ -32,12 +49,25 @@ spring:
     password: ${DATABASE_PASSWORD:secret}
     hikari:
       maximum-pool-size: ${DATABASE_MAX_CONNECTIONS:80}
+      connection-timeout: ${app.database.connection-timeout-ms}
+      connection-init-sql: SET TIME ZONE 'UTC'
+  flyway:
+    enabled: false
+    locations: classpath:db/migration
   data:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
       password: ${REDIS_PASSWORD:}
       database: ${REDIS_DB:0}
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: false
+    local-cache-scope: statement
+    arg-name-based-constructor-auto-mapping: true
+  global-config:
+    banner: false
 
 server:
   port: ${APP_PORT:3000}

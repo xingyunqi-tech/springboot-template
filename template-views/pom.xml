@@ -11,4 +11,14 @@
 
     <artifactId>template-views</artifactId>
     <description>带分组可见性的响应视图 record</description>
+    <dependencies>
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-annotations</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.jspecify</groupId>
+            <artifactId>jspecify</artifactId>
+        </dependency>
+    </dependencies>
 </project>

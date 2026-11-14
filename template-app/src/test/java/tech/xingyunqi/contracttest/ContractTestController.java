@@ -22,8 +22,10 @@ import tech.xingyunqi.template.common.core.exception.HttpStatusException;
 import tech.xingyunqi.template.common.core.exception.TooManyRequestsException;
 import tech.xingyunqi.template.common.web.envelope.ApiResponse;
 import tech.xingyunqi.template.common.web.envelope.RawResponse;
+import tech.xingyunqi.template.common.web.route.PublicEndpoint;
 
 @RestController
+@PublicEndpoint
 public class ContractTestController {
 
     public record AuthEmailLoginDto(String email, String password) {}

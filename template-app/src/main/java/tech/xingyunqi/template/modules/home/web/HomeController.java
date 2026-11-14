@@ -12,12 +12,14 @@ import org.jspecify.annotations.Nullable;
 import org.springframework.web.bind.annotation.RestController;
 import tech.xingyunqi.template.common.json.JsCompatibleModule;
 import tech.xingyunqi.template.common.web.config.AppProperties;
+import tech.xingyunqi.template.common.web.route.PublicEndpoint;
 import tech.xingyunqi.template.contract.api.HomeApi;
 import tech.xingyunqi.template.contract.model.GetAppInfo200Response;
 import tech.xingyunqi.template.contract.model.SimpleHealthCheck200Response;
 import tech.xingyunqi.template.contract.model.SimpleHealthCheck200ResponseMemory;
 
 @RestController
+@PublicEndpoint
 public class HomeController implements HomeApi {
 
     private static final long MB = 1024 * 1024;
