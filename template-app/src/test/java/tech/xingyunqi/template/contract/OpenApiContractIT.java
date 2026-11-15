@@ -28,6 +28,7 @@ import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.method.HandlerMethod;
 import org.springframework.web.servlet.mvc.method.RequestMappingInfo;
 import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
+import tech.xingyunqi.template.common.observability.metrics.MetricsEndpoint;
 import tech.xingyunqi.template.common.security.route.RouteAuth;
 import tech.xingyunqi.template.common.web.docs.DocsController;
 import tools.jackson.databind.JsonNode;
@@ -61,6 +62,8 @@ class OpenApiContractIT {
     static final JsonNode BASELINE = read("openapi/nestjs-baseline.json");
     static final JsonNode VALIDATION = read("openapi/validation.json");
     static final Set<String> SCOPE = scope();
+    static final List<Operation> UNDOCUMENTED = undocumented();
+    static final String UPLOAD_OPERATION = "uploadFile";
 
     record Operation(String method, String path, String operationId, String tag, JsonNode node) {
         String key() {
@@ -94,6 +97,25 @@ class OpenApiContractIT {
                                 : entry.path("operationId").stringValue());
             }
             return ids;
+        } catch (IOException e) {
+            throw new java.io.UncheckedIOException(e);
+        }
+    }
+
+    /** nestjs 中 {@code @ApiExcludeEndpoint} 的路由：不在基线中，由手写 controller 实现。 */
+    static List<Operation> undocumented() {
+        try {
+            JsonNode root = YAMLMapper.builder().build().readTree(Files.readString(ROOT.resolve("openapi/scope.yaml")));
+            List<Operation> operations = new ArrayList<>();
+            for (JsonNode entry : root.path("undocumentedOperations")) {
+                operations.add(new Operation(
+                        entry.path("method").stringValue(),
+                        entry.path("path").stringValue(),
+                        entry.path("operationId").stringValue(),
+                        "",
+                        entry));
+            }
+            return operations;
         } catch (IOException e) {
             throw new java.io.UncheckedIOException(e);
         }
@@ -247,13 +269,36 @@ class OpenApiContractIT {
     }
 
     @Test
+    @DisplayName("scope 内与不进文档的 handler 方法名即 operationId，且能在 nest_handlers.json 中精确命中（uploadFile 按 FILE_DRIVER 对应）")
+    void handlerNamesMatchNestHandlers() {
+        JsonNode nestHandlers = read("openapi/nest_handlers.json");
+        Map<String, HandlerMethod> handlers = handlers();
+        List<Operation> operations = new ArrayList<>(UNDOCUMENTED);
+        baselineOperations().stream()
+                .filter(operation -> SCOPE.contains(operation.operationId()))
+                .forEach(operations::add);
+        List<String> wrong = new ArrayList<>();
+        for (Operation operation : operations) {
+            HandlerMethod handler = handlers.get(operation.key());
+            String name = handler == null ? "<missing>" : handler.getMethod().getName();
+            boolean known = UPLOAD_OPERATION.equals(name) || nestHandlers.has(name);
+            if (!name.equals(operation.operationId()) || !known) {
+                wrong.add(operation.key() + " → " + name);
+            }
+        }
+        assertThat(wrong).isEmpty();
+    }
+
+    @Test
     @DisplayName("没有基线与白名单之外的端点")
     void noEndpointsOutsideContract() {
         Set<String> baselineKeys = new LinkedHashSet<>();
         baselineOperations().forEach(operation -> baselineKeys.add(operation.key()));
+        UNDOCUMENTED.forEach(operation -> baselineKeys.add(operation.key()));
         List<String> extra = new ArrayList<>();
         for (Map.Entry<String, HandlerMethod> handler : handlers().entrySet()) {
-            boolean whitelisted = handler.getValue().getBeanType() == DocsController.class;
+            boolean whitelisted = handler.getValue().getBeanType() == DocsController.class
+                    || handler.getValue().getBeanType() == MetricsEndpoint.class;
             if (!whitelisted && !baselineKeys.contains(handler.getKey())) {
                 extra.add(handler.getKey());
             }
@@ -374,6 +419,15 @@ class OpenApiContractIT {
     static List<String> whitelist() {
         return List.of(
                 "- `GET /docs`、`GET /docs-json`：文档端点，不在基线中",
+                "- `GET /metrics`（`METRICS_PATH`）：Prometheus 指标端点，nestjs 同样不进文档",
+                "- 不进文档的路由（nestjs `@ApiExcludeEndpoint`，`openapi/scope.yaml` 的 `undocumentedOperations`）："
+                        + UNDOCUMENTED.stream()
+                                .map(operation -> "`" + operation.method().toUpperCase(Locale.ROOT) + " "
+                                        + operation.path() + "`（" + operation.operationId() + "）")
+                                .collect(java.util.stream.Collectors.joining("、")),
+                "- `FILE_DRIVER=s3-presigned` 时 `POST /api/v1/files/upload`（uploadFile）由手写 controller 实现，"
+                        + "请求体为 `application/json` 的 `FileUploadDto`，响应 `{file, uploadSignedUrl}`；"
+                        + "local / s3 驱动为基线中的 multipart 接口",
                 "- 生成代码的输入经 `openapi/codegen-overlay.yaml` 修正：" + new TreeSet<>(overlayEntries()));
     }
 

@@ -45,4 +45,9 @@ public interface UserRepository {
     boolean replacePassword(int id, @Nullable String current, String next);
 
     void remove(int id);
+
+    boolean isDeleted(int id);
+
+    /** 解除头像引用（含已注销用户）。 */
+    void detachPhoto(int id);
 }

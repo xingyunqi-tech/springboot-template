@@ -108,4 +108,10 @@ public interface UserMapper {
     @Update(
             "update \"user\" set \"deletedAt\" = now(), \"updatedAt\" = now() where id = #{id} and \"deletedAt\" is null")
     int softDelete(int id);
+
+    @Select("select exists(select 1 from \"user\" where id = #{id} and \"deletedAt\" is not null)")
+    boolean existsDeleted(int id);
+
+    @Update("update \"user\" set \"photoId\" = null, \"updatedAt\" = now() where id = #{id}")
+    int detachPhoto(int id);
 }

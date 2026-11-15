@@ -70,6 +70,9 @@ public final class CodegenInput {
     }
 
     private static void applyOperationOverlay(ObjectNode operation, JsonNode overlay) {
+        if (overlay.has("requestBody") && overlay.get("requestBody").isNull()) {
+            operation.remove("requestBody");
+        }
         for (Map.Entry<String, JsonNode> response : overlay.path("responses").properties()) {
             ObjectNode target = operation.withObject("/responses").withObject("/" + response.getKey());
             if (!target.has("description")) {

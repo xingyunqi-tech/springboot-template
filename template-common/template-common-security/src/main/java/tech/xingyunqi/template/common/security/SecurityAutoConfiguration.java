@@ -22,6 +22,7 @@ import tech.xingyunqi.template.common.security.route.PermissionResolver;
 import tech.xingyunqi.template.common.security.route.RouteAuth;
 import tech.xingyunqi.template.common.security.route.RouteAuthInterceptor;
 import tech.xingyunqi.template.common.web.config.AppProperties;
+import tech.xingyunqi.template.common.web.config.MetricsProperties;
 import tools.jackson.databind.json.JsonMapper;
 
 /** JWT、密码哈希、路由鉴权拦截器；启动时校验密钥与每个 handler 的鉴权声明。 */
@@ -44,8 +45,13 @@ public class SecurityAutoConfiguration {
 
     @Bean
     RouteAuthInterceptor routeAuthInterceptor(
-            Jwt jwt, AuthProperties properties, AccessTokenValidator validator, PermissionResolver permissions) {
-        return new RouteAuthInterceptor(jwt, properties, validator, permissions);
+            Jwt jwt,
+            AuthProperties properties,
+            AccessTokenValidator validator,
+            PermissionResolver permissions,
+            MetricsProperties metrics,
+            AppProperties app) {
+        return new RouteAuthInterceptor(jwt, properties, validator, permissions, metrics, app.isProduction());
     }
 
     @Bean

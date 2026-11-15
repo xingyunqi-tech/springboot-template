@@ -7,5 +7,67 @@ operations:
         properties:
           name:
             type: string
+  healthCheck:
+    responses:
+      '200':
+        type: object
+        required: [status, info, error, details]
+        properties:
+          status:
+            type: string
+          info:
+            type: object
+            additionalProperties:
+              type: object
+          error:
+            type: object
+            additionalProperties:
+              type: object
+          details:
+            type: object
+            additionalProperties:
+              type: object
+  livenessProbe:
+    responses:
+      '200':
+        type: object
+        required: [status, info, error, details]
+        properties:
+          status:
+            type: string
+          info:
+            type: object
+            additionalProperties:
+              type: object
+          error:
+            type: object
+            additionalProperties:
+              type: object
+          details:
+            type: object
+            additionalProperties:
+              type: object
+  readinessProbe:
+    responses:
+      '200':
+        type: object
+        required: [status, info, error, details]
+        properties:
+          status:
+            type: string
+          info:
+            type: object
+            additionalProperties:
+              type: object
+          error:
+            type: object
+            additionalProperties:
+              type: object
+          details:
+            type: object
+            additionalProperties:
+              type: object
+  uploadFile:
+    requestBody: null
 
 schemas: {}

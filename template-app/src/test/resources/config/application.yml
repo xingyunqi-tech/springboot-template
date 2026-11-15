@@ -1,6 +1,20 @@
 app:
+  throttle:
+    enabled: "false"
+  file:
+    local-root: target/test-files
   auth:
     secret: test-access-secret
     refresh-secret: test-refresh-secret
     forgot-secret: test-forgot-secret
     confirm-email-secret: test-confirm-email-secret
+
+spring:
+  datasource:
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 1
+
+jobrunr:
+  background-job-server:
+    enabled: false

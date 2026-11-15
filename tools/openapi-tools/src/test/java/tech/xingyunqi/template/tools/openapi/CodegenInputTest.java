@@ -21,7 +21,7 @@ class CodegenInputTest {
     private static final String BASELINE = """
             {"openapi":"3.0.0","paths":{
               "/a":{"get":{"operationId":"getA","responses":{"200":{"description":"","content":{"application/json":{"schema":{"$ref":"#/components/schemas/A"}}}}}},
-                    "post":{"operationId":"postA","responses":{"200":{"description":""}}}},
+                    "post":{"operationId":"postA","requestBody":{"content":{"multipart/form-data":{"schema":{"type":"object"}}}},"responses":{"200":{"description":""}}}},
               "/b":{"get":{"operationId":"getB","responses":{"200":{"description":"","content":{"application/json":{"schema":{"$ref":"#/components/schemas/B"}}}}}}}},
              "components":{"schemas":{
                "A":{"type":"object","required":["x","y"],"properties":{"x":{"type":"string"},"y":{"$ref":"#/components/schemas/C"}}},
@@ -74,6 +74,19 @@ class CodegenInputTest {
         assertThat(result.at("/paths/~1a/post/responses/200/content/application~1json/schema/type")
                         .stringValue())
                 .isEqualTo("object");
+    }
+
+    @Test
+    @DisplayName("overlay 中 requestBody 为 null 时去掉该 operation 的请求体")
+    void removesRequestBody() {
+        ObjectNode result = build(scope("postA"), """
+                operations:
+                  postA:
+                    requestBody: null
+                """);
+        assertThat(result.at("/paths/~1a/post").has("requestBody")).isFalse();
+        assertThat(build(scope("postA"), "{}").at("/paths/~1a/post").has("requestBody"))
+                .isTrue();
     }
 
     @Test

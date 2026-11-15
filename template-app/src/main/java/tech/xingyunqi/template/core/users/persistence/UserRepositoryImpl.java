@@ -90,6 +90,16 @@ class UserRepositoryImpl implements UserRepository {
         mapper.softDelete(id);
     }
 
+    @Override
+    public boolean isDeleted(int id) {
+        return mapper.existsDeleted(id);
+    }
+
+    @Override
+    public void detachPhoto(int id) {
+        mapper.detachPhoto(id);
+    }
+
     private static void checkColumns(Map<String, @Nullable Object> values) {
         for (String column : values.keySet()) {
             if (!WRITABLE.contains(column)) {

@@ -7,8 +7,49 @@ app:
   fallback-language: ${APP_FALLBACK_LANGUAGE:en}
   swagger-enabled: ${SWAGGER_ENABLED:}
   trust-proxy: ${TRUST_PROXY:0}
+  throttle:
+    enabled: ${THROTTLE_ENABLED:true}
+    ttl: ${THROTTLE_TTL:60}
+    limit: ${THROTTLE_LIMIT:100}
   database:
     connection-timeout-ms: ${DATABASE_CONNECTION_TIMEOUT_MS:10000}
+  metrics:
+    enabled: ${METRICS_ENABLED:true}
+    path: ${METRICS_PATH:metrics}
+    token: ${METRICS_TOKEN:}
+  health:
+    memory-heap-threshold-mb: ${HEALTH_MEMORY_HEAP_THRESHOLD_MB:300}
+  wechat:
+    app-id: ${WECHAT_APP_ID:}
+    app-secret: ${WECHAT_APP_SECRET:}
+  alipay:
+    app-id: ${ALIPAY_APP_ID:}
+  mail:
+    host: ${MAIL_HOST:}
+    port: ${MAIL_PORT:587}
+    user: ${MAIL_USER:}
+    password: ${MAIL_PASSWORD:}
+    default-email: ${MAIL_DEFAULT_EMAIL:}
+    default-name: ${MAIL_DEFAULT_NAME:}
+    ignore-tls: ${MAIL_IGNORE_TLS:}
+    secure: ${MAIL_SECURE:}
+    require-tls: ${MAIL_REQUIRE_TLS:}
+  file:
+    driver: ${FILE_DRIVER:local}
+    local-root: files
+    access-key-id: ${ACCESS_KEY_ID:}
+    secret-access-key: ${SECRET_ACCESS_KEY:}
+    bucket: ${AWS_DEFAULT_S3_BUCKET:}
+    region: ${AWS_S3_REGION:}
+    endpoint: ${AWS_S3_ENDPOINT:}
+    force-path-style: ${AWS_S3_FORCE_PATH_STYLE:true}
+    max-size:
+      image: ${FILE_IMAGE_MAX_SIZE:}
+      private-image: ${FILE_PRIVATE_IMAGE_MAX_SIZE:}
+      content-image: ${FILE_CONTENT_IMAGE_MAX_SIZE:}
+      audio: ${FILE_AUDIO_MAX_SIZE:}
+      import-file: ${FILE_IMPORT_MAX_SIZE:}
+      export: ${FILE_EXPORT_MAX_SIZE:}
   seed:
     admin-email: ${SEED_ADMIN_EMAIL:}
     admin-password: ${SEED_ADMIN_PASSWORD:}
@@ -33,6 +74,9 @@ spring:
   web:
     resources:
       add-mappings: false
+  servlet:
+    multipart:
+      enabled: false
   mvc:
     problemdetails:
       enabled: false
@@ -61,6 +105,23 @@ spring:
       password: ${REDIS_PASSWORD:}
       database: ${REDIS_DB:0}
 
+jobrunr:
+  database:
+    skip-create: true
+  background-job-server:
+    poll-interval-in-seconds: 5
+    worker-count: 5
+    interrupt-jobs-await-duration-on-stop: 20s
+    metrics:
+      enabled: false
+  jobs:
+    metrics:
+      enabled: false
+  dashboard:
+    enabled: false
+  miscellaneous:
+    allow-anonymous-data-usage: false
+
 mybatis-plus:
   configuration:
     map-underscore-to-camel-case: false
@@ -77,7 +138,34 @@ server:
       enabled: false
 
 management:
+  health:
+    jobrunr:
+      enabled: false
   endpoints:
     web:
       exposure:
         exclude: '*'
+  metrics:
+    tags:
+      app: ${APP_NAME:app}
+  otlp:
+    metrics:
+      export:
+        enabled: false
+  logging:
+    export:
+      otlp:
+        enabled: false
+  tracing:
+    enabled: ${OTEL_ENABLED:false}
+    export:
+      enabled: ${OTEL_ENABLED:false}
+    sampling:
+      probability: 1.0
+  opentelemetry:
+    resource-attributes:
+      service.name: ${APP_NAME:app}
+    tracing:
+      export:
+        otlp:
+          endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318}/v1/traces

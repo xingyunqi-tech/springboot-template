@@ -37,6 +37,14 @@ class TomcatContractIT {
     }
 
     @Test
+    @DisplayName("Tomcat 下指标端点的 Content-Type 与 prom-client 逐字一致")
+    void metricsContentTypeMatchesPromClient() throws Exception {
+        HttpResponse<String> response = send("GET", "/metrics");
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.headers().firstValue("Content-Type")).hasValue("text/plain; version=0.0.4; charset=utf-8");
+    }
+
+    @Test
     @DisplayName("Tomcat 下 Content-Type 与 Express 逐字一致")
     void contentTypeMatchesExpress() throws Exception {
         assertThat(send("GET", "/").headers().firstValue("Content-Type")).hasValue("application/json; charset=utf-8");

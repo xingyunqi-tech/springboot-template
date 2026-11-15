@@ -47,7 +47,7 @@ test-e2e: ## E2E 测试（APP_URL，默认 http://localhost:3000）
 	$(MVNW) -Pe2e -pl tests/e2e -am verify -DAPP_URL=$(APP_URL)
 
 .PHONY: test-parity
-test-parity: ## parity 测试（PARITY_TARGETS，默认 java=3000、nestjs=NESTJS_PORT；本服务须与 nestjs 同 APP_NAME 启动）
+test-parity: ## parity 测试（PARITY_TARGETS，默认 java=3000、nestjs=NESTJS_PORT；本服务须与 nestjs 同 APP_NAME 启动，并设 THROTTLE_ENABLED=true、TRUST_PROXY=1）
 	$(MVNW) -Pparity -pl tests/parity -am verify -DPARITY_TARGETS=$(PARITY_TARGETS)
 
 .PHONY: infra
@@ -63,7 +63,7 @@ openapi-copy: ## 从同级 fastapi-temp 的已提交版本复制共享产物与�
 	scripts/openapi-copy.sh
 
 .PHONY: nestjs-up
-nestjs-up: ## 启动 nestjs 参照服务（openapi/SOURCE 的提交，端口 NESTJS_PORT，默认 3021），供 parity 使用
+nestjs-up: ## 启动 nestjs 参照服务（openapi/SOURCE 的提交，端口 NESTJS_PORT，默认 3021，THROTTLE_ENABLED=true、TRUST_PROXY=1），供 parity 使用
 	scripts/nestjs-ref.sh up
 
 .PHONY: nestjs-down

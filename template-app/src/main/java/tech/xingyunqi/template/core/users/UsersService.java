@@ -21,6 +21,7 @@ import tech.xingyunqi.template.core.users.domain.Photo;
 import tech.xingyunqi.template.core.users.domain.SortItem;
 import tech.xingyunqi.template.core.users.domain.User;
 import tech.xingyunqi.template.core.users.domain.UserInput;
+import tech.xingyunqi.template.infrastructure.accountcleanup.AccountCleanupProducer;
 import tech.xingyunqi.template.infrastructure.files.FileRecord;
 import tech.xingyunqi.template.infrastructure.files.FileReferences;
 
@@ -36,18 +37,21 @@ public class UsersService {
     private final SessionService sessions;
     private final PasswordHasher passwords;
     private final WriteTransactions transactions;
+    private final AccountCleanupProducer cleanups;
 
     public UsersService(
             UserRepository repository,
             FileReferences files,
             SessionService sessions,
             PasswordHasher passwords,
-            WriteTransactions transactions) {
+            WriteTransactions transactions,
+            AccountCleanupProducer cleanups) {
         this.repository = repository;
         this.files = files;
         this.sessions = sessions;
         this.passwords = passwords;
         this.transactions = transactions;
+        this.cleanups = cleanups;
     }
 
     public Optional<User> findById(int id) {
@@ -215,10 +219,20 @@ public class UsersService {
         });
     }
 
+    /** 删除会话、软删除，提交后投递账号清理任务。 */
     @WriteTransaction
     public void remove(int userId) {
         sessions.deleteByUser(userId, null);
         repository.remove(userId);
+        cleanups.enqueueAfterCommit(userId);
+    }
+
+    public boolean isDeleted(int userId) {
+        return repository.isDeleted(userId);
+    }
+
+    public void detachPhoto(int userId) {
+        repository.detachPhoto(userId);
     }
 
     private void ensureEmailFree(String email, @Nullable Integer current) {

@@ -6,6 +6,7 @@ import org.jspecify.annotations.Nullable;
 import org.springframework.core.annotation.AnnotatedElementUtils;
 import org.springframework.web.method.HandlerMethod;
 import tech.xingyunqi.template.common.web.route.AuthenticatedOnly;
+import tech.xingyunqi.template.common.web.route.MonitoringToken;
 import tech.xingyunqi.template.common.web.route.OptionalAuth;
 import tech.xingyunqi.template.common.web.route.PermissionsGuarded;
 import tech.xingyunqi.template.common.web.route.PublicEndpoint;
@@ -21,7 +22,8 @@ public record RouteAuth(Mode mode, boolean guarded, List<String> permissions, bo
         PUBLIC,
         OPTIONAL,
         JWT,
-        REFRESH
+        REFRESH,
+        MONITORING
     }
 
     public static RouteAuth of(HandlerMethod handler) {
@@ -29,7 +31,7 @@ public record RouteAuth(Mode mode, boolean guarded, List<String> permissions, bo
         if (modes.size() != 1) {
             throw new IllegalStateException("handler " + handler
                     + " must declare exactly one of @PublicEndpoint, @OptionalAuth, @AuthenticatedOnly,"
-                    + " @RefreshTokenAuth; found " + modes);
+                    + " @RefreshTokenAuth, @MonitoringToken; found " + modes);
         }
         boolean guarded = find(handler, PermissionsGuarded.class) != null;
         Permissions onMethod = permissions(
@@ -79,6 +81,9 @@ public record RouteAuth(Mode mode, boolean guarded, List<String> permissions, bo
         }
         if (has(handler, RefreshTokenAuth.class, method)) {
             modes.add(Mode.REFRESH);
+        }
+        if (has(handler, MonitoringToken.class, method)) {
+            modes.add(Mode.MONITORING);
         }
         return modes;
     }

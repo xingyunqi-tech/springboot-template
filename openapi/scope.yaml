@@ -1,6 +1,9 @@
 operations:
   - getAppInfo
   - simpleHealthCheck
+  - healthCheck
+  - livenessProbe
+  - readinessProbe
   - loginWithEmail
   - registerWithEmail
   - confirmEmail
@@ -26,3 +29,13 @@ operations:
     permissions: [user:update]
   - operationId: deleteUser
     permissions: [user:delete]
+  - operationId: adminRetriggerAccountCleanup
+    permissions: [user:delete]
+  - uploadFile
+undocumentedOperations:
+  - operationId: readPrivateFile
+    method: get
+    path: /api/v1/files/private/{id}
+  - operationId: downloadFile
+    method: get
+    path: /api/v1/files/{path}

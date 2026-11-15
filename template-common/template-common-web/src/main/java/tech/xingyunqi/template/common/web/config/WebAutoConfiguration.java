@@ -50,7 +50,7 @@ import tools.jackson.databind.json.JsonMapper;
 
 /** nestjs 全局 HTTP 契约：过滤器顺序、信封、错误翻译、校验执行器、Express 路由语义与文档端点。 */
 @AutoConfiguration
-@EnableConfigurationProperties(AppProperties.class)
+@EnableConfigurationProperties({AppProperties.class, MetricsProperties.class})
 public class WebAutoConfiguration implements WebMvcConfigurer {
 
     public static final int CONTENT_TYPE_ORDER = Ordered.HIGHEST_PRECEDENCE;
@@ -58,7 +58,9 @@ public class WebAutoConfiguration implements WebMvcConfigurer {
     public static final int CORS_ORDER = Ordered.HIGHEST_PRECEDENCE + 10;
     public static final int SECURITY_HEADERS_ORDER = Ordered.HIGHEST_PRECEDENCE + 30;
     public static final int JSON_BODY_ORDER = Ordered.HIGHEST_PRECEDENCE + 40;
-    public static final int CATCH_ALL_ORDER = Ordered.HIGHEST_PRECEDENCE + 2;
+    public static final int REQUEST_LOGGING_ORDER = Ordered.HIGHEST_PRECEDENCE + 2;
+    public static final int CATCH_ALL_ORDER = Ordered.HIGHEST_PRECEDENCE + 3;
+    public static final int HTTP_METRICS_ORDER = Ordered.HIGHEST_PRECEDENCE + 20;
     public static final int TRAILING_SLASH_ORDER = Ordered.HIGHEST_PRECEDENCE + 50;
     public static final int ROUTING_ORDER = Ordered.HIGHEST_PRECEDENCE + 60;
 

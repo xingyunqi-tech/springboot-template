@@ -13,7 +13,8 @@ compose=(docker compose -p springboot-template-nestjs -f "$root/scripts/nestjs/n
 case "${1:-}" in
   up)
     mkdir -p "$state"
-    git -C "$nestjs_dir" show "$commit:env-example-relational" >"$NESTJS_ENV_FILE"
+    git -C "$nestjs_dir" show "$commit:env-example-relational" \
+      | sed -e 's/^THROTTLE_ENABLED=.*/THROTTLE_ENABLED=true/' -e 's/^TRUST_PROXY=.*/TRUST_PROXY=1/' >"$NESTJS_ENV_FILE"
     if ! docker image inspect "$NESTJS_IMAGE" >/dev/null 2>&1; then
       echo "缺少镜像 $NESTJS_IMAGE，先执行 make openapi-sync 构建" >&2
       exit 1

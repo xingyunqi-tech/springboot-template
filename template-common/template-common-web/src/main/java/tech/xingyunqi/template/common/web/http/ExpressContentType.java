@@ -15,17 +15,30 @@ import org.apache.catalina.valves.ValveBase;
 import org.jspecify.annotations.Nullable;
 import org.springframework.web.filter.OncePerRequestFilter;
 
-/** 以 Express 写法输出 {@code Content-Type: application/json; charset=utf-8}（经 Tomcat coyote 响应原样写入）。 */
+/**
+ * 以 Express 写法输出 {@code application/json; charset=utf-8} 与 Prometheus 文本格式的 {@code Content-Type}（经 Tomcat coyote
+ * 响应原样写入）。
+ */
 public final class ExpressContentType {
 
     static final String COYOTE_ATTRIBUTE = ExpressContentType.class.getName() + ".coyote";
     private static final Pattern JSON_UTF8 =
             Pattern.compile("application/json\\s*(;\\s*charset\\s*=\\s*\"?utf-8\"?\\s*)?", Pattern.CASE_INSENSITIVE);
+    private static final Pattern PROMETHEUS_UTF8 = Pattern.compile(
+            "text/plain\\s*;\\s*version\\s*=\\s*0\\.0\\.4\\s*;\\s*charset\\s*=\\s*\"?utf-8\"?",
+            Pattern.CASE_INSENSITIVE);
+
+    /** Prometheus 文本格式，与 prom-client 输出逐字相同。 */
+    public static final String PROMETHEUS = "text/plain; version=0.0.4; charset=utf-8";
 
     private ExpressContentType() {}
 
-    static boolean isJsonUtf8(String contentType) {
-        return JSON_UTF8.matcher(contentType.strip()).matches();
+    static @Nullable String verbatim(String contentType) {
+        String stripped = contentType.strip();
+        if (JSON_UTF8.matcher(stripped).matches()) {
+            return JsonResponses.CONTENT_TYPE;
+        }
+        return PROMETHEUS_UTF8.matcher(stripped).matches() ? PROMETHEUS : null;
     }
 
     /** 把 coyote 响应放进请求属性，供 {@link Filter} 使用。 */
@@ -59,7 +72,7 @@ public final class ExpressContentType {
     private static final class Wrapper extends HttpServletResponseWrapper {
 
         private final org.apache.coyote.@Nullable Response coyote;
-        private boolean json;
+        private boolean exact;
 
         Wrapper(HttpServletResponse response, org.apache.coyote.@Nullable Response coyote) {
             super(response);
@@ -68,22 +81,23 @@ public final class ExpressContentType {
 
         @Override
         public void setContentType(@Nullable String type) {
-            if (type != null && isJsonUtf8(type) && !isCommitted()) {
-                json = true;
+            String resolved = type == null ? null : verbatim(type);
+            if (resolved != null && !isCommitted()) {
+                this.exact = true;
                 if (coyote != null) {
-                    coyote.setContentTypeNoCharset(JsonResponses.CONTENT_TYPE);
+                    coyote.setContentTypeNoCharset(resolved);
                 } else {
-                    super.setContentType(JsonResponses.CONTENT_TYPE);
+                    super.setContentType(resolved);
                 }
                 return;
             }
-            json = false;
+            this.exact = false;
             super.setContentType(type);
         }
 
         @Override
         public void setCharacterEncoding(@Nullable String charset) {
-            if (json && charset != null && charset.toLowerCase(Locale.ROOT).equals("utf-8")) {
+            if (exact && charset != null && charset.toLowerCase(Locale.ROOT).equals("utf-8")) {
                 return;
             }
             super.setCharacterEncoding(charset);

@@ -12,6 +12,7 @@ import tech.xingyunqi.template.common.web.http.CurrentRequest;
 import tech.xingyunqi.template.common.web.route.AuthenticatedOnly;
 import tech.xingyunqi.template.common.web.route.PublicEndpoint;
 import tech.xingyunqi.template.common.web.route.RefreshTokenAuth;
+import tech.xingyunqi.template.common.web.route.Throttle;
 import tech.xingyunqi.template.contract.api.AuthApi;
 import tech.xingyunqi.template.contract.model.AuthChangePasswordDto;
 import tech.xingyunqi.template.contract.model.AuthConfirmEmailDto;
@@ -45,6 +46,7 @@ class AuthController implements AuthApi {
 
     @Override
     @PublicEndpoint
+    @Throttle(limit = 5, ttl = 60_000)
     public LoginResponseView loginWithEmail(AuthEmailLoginDto body, @Nullable Object acceptLanguage) {
         ClientInfo client = ClientInfo.of(CurrentRequest.get(), app.trustProxy());
         AuthService.Login login = auth.loginWithEmail(
@@ -78,12 +80,14 @@ class AuthController implements AuthApi {
 
     @Override
     @PublicEndpoint
+    @Throttle(limit = 3, ttl = 300_000)
     public void forgotPassword(AuthForgotPasswordDto body, @Nullable Object acceptLanguage) {
         auth.forgotPassword(required(body.email()));
     }
 
     @Override
     @PublicEndpoint
+    @Throttle(limit = 5, ttl = 300_000)
     public void resetPassword(AuthResetPasswordDto body, @Nullable Object acceptLanguage) {
         auth.resetPassword(required(body.hash()), required(body.password()));
     }
@@ -98,6 +102,7 @@ class AuthController implements AuthApi {
 
     @Override
     @AuthenticatedOnly
+    @Throttle(limit = 10, ttl = 60_000)
     public @Nullable UserView updateCurrentUser(AuthUpdateDto body, @Nullable Object acceptLanguage) {
         JsonNode node = validatedBody();
         return auth.update(
@@ -132,6 +137,7 @@ class AuthController implements AuthApi {
 
     @Override
     @AuthenticatedOnly
+    @Throttle(limit = 3, ttl = 60_000)
     public void changePassword(AuthChangePasswordDto body, @Nullable Object acceptLanguage) {
         auth.changePassword(AuthContext.current(), required(body.oldPassword()), required(body.newPassword()));
     }

@@ -57,6 +57,7 @@ public class RequestContextFilter extends OncePerRequestFilter {
             chain.doFilter(request, response);
         } finally {
             MDC.remove("request_id");
+            MDC.remove("user_id");
             RequestLanguage.set(null);
         }
     }

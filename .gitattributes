@@ -5,3 +5,5 @@ mvnw text eol=lf
 openapi/*.json -text
 db/*.sql -text
 tests/contract/fixtures/*.json -text
+template-app/src/main/resources/mail-templates/*.hbs -text
+tests/fixtures/nestjs_mail/*.json -text

@@ -192,6 +192,15 @@ class HttpContractIT {
     }
 
     @Test
+    @DisplayName("THROTTLE_ENABLED=false 时不输出任何限流头")
+    void throttleDisabledSendsNoRateLimitHeaders() throws Exception {
+        MockHttpServletResponse response = get("/");
+        assertThat(response.getStatus()).isEqualTo(200);
+        assertThat(response.getHeaderNames())
+                .noneMatch(name -> name.startsWith("X-RateLimit-") || name.equals("Retry-After"));
+    }
+
+    @Test
     @DisplayName("未知异常的响应仍带 Request ID 与安全头")
     void unknownErrorKeepsOuterHeaders() throws Exception {
         MockHttpServletResponse response = get("/api/v1/test/errors/unknown");

@@ -25,10 +25,7 @@ import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
 import tools.jackson.databind.node.StringNode;
 
-/**
- * 与 fastapi-temp {@code tests/parity/test_auth_parity.py} 一一对应；限流用例（{@code test_throttled_response}）与账号清理重投递
- * （{@code test_admin_retrigger_cleanup_errors}）随 M3 移植。
- */
+/** 与 fastapi-temp {@code tests/parity/test_auth_parity.py} 一一对应。 */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class AuthParityIT {
 
@@ -87,9 +84,6 @@ class AuthParityIT {
     static JsonNode assertSame(Parity.Pair pair) {
         Parity.Result java = pair.java();
         Parity.Result nestjs = pair.nestjs();
-        for (Parity.Result result : List.of(java, nestjs)) {
-            assertThat(result.status()).as("unexpected 429").isNotEqualTo(429);
-        }
         String detail = new String(java.body(), StandardCharsets.UTF_8) + "\n"
                 + new String(nestjs.body(), StandardCharsets.UTF_8);
         assertThat(java.status()).as(detail).isEqualTo(nestjs.status());
@@ -116,7 +110,12 @@ class AuthParityIT {
     }
 
     Parity.Pair authedEach(
-            String method, String javaPath, String nestjsPath, List<String> tokens, Object body, Map<String, String> extra) {
+            String method,
+            String javaPath,
+            String nestjsPath,
+            List<String> tokens,
+            Object body,
+            Map<String, String> extra) {
         Map<String, String> javaHeaders = new LinkedHashMap<>(extra);
         Map<String, String> nestjsHeaders = new LinkedHashMap<>(extra);
         javaHeaders.put("Authorization", "Bearer " + tokens.get(0));
@@ -185,8 +184,15 @@ class AuthParityIT {
         return Stream.of(
                 map(),
                 map("email", "john.doe@example.com", "password", PASSWORD, "firstName", "J", "lastName", "D"),
-                map("email", "parity." + RUN + "@example.com", "password", PASSWORD, "firstName", "<b>P</b>",
-                        "lastName", "R"),
+                map(
+                        "email",
+                        "parity." + RUN + "@example.com",
+                        "password",
+                        PASSWORD,
+                        "firstName",
+                        "<b>P</b>",
+                        "lastName",
+                        "R"),
                 map("email", "x@example.com", "password", PASSWORD, "firstName", "", "lastName", 1));
     }
 
@@ -216,6 +222,28 @@ class AuthParityIT {
     @MethodSource("linkErrorCases")
     void emailLinkErrors(String url, Object body) {
         assertSame(post(url, body, Map.of()));
+    }
+
+    @Test
+    void throttledResponse() {
+        int n = new java.security.SecureRandom().nextInt(1 << 20);
+        Map<String, String> headers =
+                Map.of("X-Forwarded-For", "172." + (16 + (n >> 16)) + "." + ((n >> 8) & 0xFF) + "." + (n & 0xFF));
+        Map<String, Object> body = map("email", "missing@example.com");
+        String url = "/api/v1/auth/forgot/password";
+        for (int i = 0; i < 3; i++) {
+            assertSame(post(url, body, headers));
+        }
+        Map<String, String> all = new LinkedHashMap<>(headers);
+        all.put("Content-Type", "application/json");
+        Parity.Pair pair = parity.requestThrottled("POST", url, all, json(body));
+        for (Parity.Result result : List.of(pair.java(), pair.nestjs())) {
+            assertThat(result.status()).isEqualTo(429);
+            assertThat(result.header("retry-after")).matches("\\d+");
+            assertThat(result.headers().keySet())
+                    .noneMatch(name -> name.toLowerCase(java.util.Locale.ROOT).startsWith("x-ratelimit-"));
+        }
+        assertSame(pair);
     }
 
     static Stream<Arguments> unauthenticatedCases() {
@@ -256,7 +284,8 @@ class AuthParityIT {
         assertThat(sessions.java().status()).isEqualTo(200);
         assertThat(sessions.nestjs().status()).isEqualTo(200);
         assertThat(Set.copyOf(sessions.java().json().path("data").get(0).propertyNames()))
-                .isEqualTo(Set.copyOf(sessions.nestjs().json().path("data").get(0).propertyNames()));
+                .isEqualTo(
+                        Set.copyOf(sessions.nestjs().json().path("data").get(0).propertyNames()));
     }
 
     static Stream<Object> updateMeErrors() {
@@ -290,8 +319,8 @@ class AuthParityIT {
 
     @Test
     void refreshRotation() {
-        Parity.Pair login = post(
-                "/api/v1/auth/email/login", map("email", "john.doe@example.com", "password", PASSWORD), Map.of());
+        Parity.Pair login =
+                post("/api/v1/auth/email/login", map("email", "john.doe@example.com", "password", PASSWORD), Map.of());
         List<String> refresh = List.of(
                 login.java().json().path("data").path("refreshToken").asString(),
                 login.nestjs().json().path("data").path("refreshToken").asString());
@@ -375,14 +404,29 @@ class AuthParityIT {
                     "POST",
                     "/api/v1/users",
                     tokens,
-                    map("email", email, "password", PASSWORD, "firstName", "Life", "role", map("id", 2), "status",
-                            map("id", 1), "birthday", "1990-05-06", "gender", 2),
+                    map(
+                            "email",
+                            email,
+                            "password",
+                            PASSWORD,
+                            "firstName",
+                            "Life",
+                            "role",
+                            map("id", 2),
+                            "status",
+                            map("id", 1),
+                            "birthday",
+                            "1990-05-06",
+                            "gender",
+                            2),
                     Map.of());
             assertSame(created);
-            String javaPath = "/api/v1/users/" + created.java().json().path("data").path("id").asInt();
-            String nestjsPath = "/api/v1/users/" + created.nestjs().json().path("data").path("id").asInt();
-            Map<String, Object> update = map("nickname", "nick", "phone", "139" + RUN.substring(RUN.length() - 8),
-                    "firstName", null);
+            String javaPath = "/api/v1/users/"
+                    + created.java().json().path("data").path("id").asInt();
+            String nestjsPath = "/api/v1/users/"
+                    + created.nestjs().json().path("data").path("id").asInt();
+            Map<String, Object> update =
+                    map("nickname", "nick", "phone", "139" + RUN.substring(RUN.length() - 8), "firstName", null);
             assertSame(authedEach("PUT", javaPath, nestjsPath, tokens, update, Map.of()));
             assertSame(authedEach("PUT", javaPath, nestjsPath, tokens, map("email", "admin@example.com"), Map.of()));
             assertSame(authedEach("DELETE", javaPath, nestjsPath, tokens, null, Map.of()));
@@ -391,5 +435,26 @@ class AuthParityIT {
         } finally {
             ParityDb.dropUser(email);
         }
+    }
+
+    static Stream<Arguments> retriggerCleanupCases() {
+        List<Arguments> cases = new ArrayList<>();
+        for (String lang : List.of("en", "zh")) {
+            for (String userId : List.of("2", "999999", "abc", "0")) {
+                cases.add(Arguments.of(userId, lang));
+            }
+        }
+        return cases.stream();
+    }
+
+    @ParameterizedTest
+    @MethodSource("retriggerCleanupCases")
+    void adminRetriggerCleanupErrors(String userId, String lang) {
+        assertSame(authed(
+                "POST",
+                "/api/v1/admin/users/" + userId + "/cleanup",
+                tokens("admin@example.com"),
+                null,
+                Map.of("Accept-Language", lang)));
     }
 }

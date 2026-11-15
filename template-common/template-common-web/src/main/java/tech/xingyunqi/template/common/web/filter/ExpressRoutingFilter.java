@@ -48,7 +48,11 @@ public class ExpressRoutingFilter extends OncePerRequestFilter {
             if (pattern == null) {
                 return Routes.cannot(request);
             }
-            return checkRawPath(request.getRequestURI(), pattern, request);
+            HttpStatusException rejection = checkRawPath(request.getRequestURI(), pattern, request);
+            if (rejection == null) {
+                request.setAttribute(Routes.MATCHED_ROUTE_ATTRIBUTE, pattern);
+            }
+            return rejection;
         } finally {
             matchable.setAttribute(ServletRequestPathUtils.PATH_ATTRIBUTE, previousPath);
             if (previousPath == null) {

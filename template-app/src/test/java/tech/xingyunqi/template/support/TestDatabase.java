@@ -13,6 +13,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 import tech.xingyunqi.template.cli.Seeder;
 import tech.xingyunqi.template.common.security.password.PasswordHasher;
+import tech.xingyunqi.template.infrastructure.queue.JobStorage;
 import tools.jackson.databind.json.JsonMapper;
 
 /** 测试共用的 Postgres / Redis 容器；模板库迁移并 seed 一次，每个 Spring 上下文克隆独立数据库。 */
@@ -77,6 +78,7 @@ public final class TestDatabase {
                         null,
                         null)
                 .seed();
+        JobStorage.migrate(dataSource);
     }
 
     private static void execute(String sql) {
