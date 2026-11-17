@@ -43,7 +43,23 @@ public final class Seeder {
         this.adminPassword = adminPassword;
     }
 
+    /** 种子账号的密码哈希（MD5 后按 {@code PASSWORD_HASHER} 哈希），为 null 表示不创建该账号。 */
+    public record HashedPasswords(
+            @Nullable String admin, @Nullable String demo) {}
+
+    /** 计算种子账号的密码哈希，在写库事务之外调用。 */
+    public HashedPasswords hashPasswords() {
+        String admin = production ? adminPassword : DEFAULT_PASSWORD;
+        return new HashedPasswords(
+                admin == null || admin.isEmpty() ? null : passwords.hash(md5(admin)),
+                production ? null : passwords.hash(md5(DEFAULT_PASSWORD)));
+    }
+
     public void seed() {
+        seed(hashPasswords());
+    }
+
+    public void seed(HashedPasswords hashed) {
         JsonNode data = load("seed/seed.json");
         for (JsonNode role : data.path("roles")) {
             jdbc.update(
@@ -79,7 +95,7 @@ public final class Seeder {
         if (regions == null || regions == 0) {
             seedRegions();
         }
-        seedUsers();
+        seedUsers(hashed);
         for (JsonNode row : data.path("config")) {
             jdbc.update(
                     "insert into config (key, value, \"isPublic\") values (?, ?::jsonb, ?) on conflict do nothing",
@@ -110,18 +126,19 @@ public final class Seeder {
         }
     }
 
-    private void seedUsers() {
+    private void seedUsers(HashedPasswords hashed) {
         String email = production
                 ? (adminEmail == null || adminEmail.isBlank()
                         ? null
                         : adminEmail.strip().toLowerCase(Locale.ROOT))
                 : "admin@example.com";
-        String password = production ? adminPassword : DEFAULT_PASSWORD;
-        if (countRole(1) == 0 && email != null && password != null && !password.isEmpty()) {
-            insertUser("Super", "Admin", email, password, 1);
+        String admin = hashed.admin();
+        if (countRole(1) == 0 && email != null && admin != null) {
+            insertUser("Super", "Admin", email, admin, 1);
         }
-        if (countRole(2) == 0 && !production) {
-            insertUser("John", "Doe", "john.doe@example.com", DEFAULT_PASSWORD, 2);
+        String demo = hashed.demo();
+        if (countRole(2) == 0 && demo != null) {
+            insertUser("John", "Doe", "john.doe@example.com", demo, 2);
         }
     }
 
@@ -131,14 +148,14 @@ public final class Seeder {
         return count == null ? 0 : count;
     }
 
-    private void insertUser(String firstName, String lastName, String email, String password, int roleId) {
+    private void insertUser(String firstName, String lastName, String email, String passwordHash, int roleId) {
         jdbc.update(
                 "insert into \"user\" (\"firstName\", \"lastName\", email, password, \"roleId\", \"statusId\")"
                         + " values (?, ?, ?, ?, ?, 1)",
                 firstName,
                 lastName,
                 email,
-                passwords.hash(md5(password)),
+                passwordHash,
                 roleId);
     }
 

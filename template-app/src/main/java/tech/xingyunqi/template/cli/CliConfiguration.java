@@ -54,7 +54,8 @@ class CliConfiguration {
             switch (AppRole.of(context.getEnvironment())) {
                 case "migrate" -> exit(context, CliCommands.EXIT_OK);
                 case "seed" -> {
-                    transactions.executeWithoutResult(status -> seeder.seed());
+                    Seeder.HashedPasswords hashed = seeder.hashPasswords();
+                    transactions.executeWithoutResult(status -> seeder.seed(hashed));
                     exit(context, CliCommands.EXIT_OK);
                 }
                 case "create-superuser" ->
