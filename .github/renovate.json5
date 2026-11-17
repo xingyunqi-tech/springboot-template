@@ -50,7 +50,7 @@
     },
     {
       matchManagers: ['custom.regex'],
-      matchFileNames: ['.github/workflows/**'],
+      matchFileNames: ['.github/workflows/**', 'Makefile'],
       groupName: 'github actions',
     },
     {
@@ -71,6 +71,10 @@
       matchUpdateTypes: ['minor', 'patch'],
       automerge: true,
     },
+    {
+      matchUpdateTypes: ['major'],
+      automerge: false,
+    },
   ],
   'docker-compose': {
     managerFilePatterns: ['/^docker/.+\\.ya?ml$/'],
@@ -78,9 +82,18 @@
   customManagers: [
     {
       customType: 'regex',
-      managerFilePatterns: ['/^\\.github/workflows/.+\\.ya?ml$/'],
-      matchStrings: ['_IMAGE: (?<depName>[^:\\s]+):(?<currentValue>[^\\s]+)'],
+      managerFilePatterns: ['/(^|/)Makefile$/', '/^\\.github/workflows/.+\\.ya?ml$/'],
+      matchStrings: [
+        '_IMAGE(?: :=|:) (?<depName>[^:\\s/]+/[^:\\s]+):(?<currentValue>[^\\s@]+)(?:@(?<currentDigest>sha256:[a-f0-9]{64}))?',
+      ],
       datasourceTemplate: 'docker',
+    },
+    {
+      customType: 'regex',
+      managerFilePatterns: ['/(^|/)Makefile$/'],
+      matchStrings: [
+        '# renovate: datasource=(?<datasource>[a-z-]+) depName=(?<depName>\\S+)\\s+[A-Z_]+_VERSION\\s*:?=\\s*v?(?<currentValue>\\S+)',
+      ],
     },
     {
       customType: 'regex',

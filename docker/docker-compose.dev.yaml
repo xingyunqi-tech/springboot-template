@@ -1,0 +1,60 @@
+# 开发环境：development 镜像（JDK），种子数据一次性写入；develop.watch 把宿主编译出的 template-app/target/classes 同步进 api 与 worker 后重启，
+# 其它模块或依赖变更时重新构建镜像
+#
+# 用法：
+#   docker compose -f docker/docker-compose.base.yaml -f docker/docker-compose.postgres.yaml -f docker/docker-compose.redis.yaml -f docker/docker-compose.dev.yaml up --build --watch
+#   ./mvnw -pl template-app -am compile   # 另一终端修改代码后执行
+
+x-dev-build: &dev-build
+  context: ..
+  dockerfile: Dockerfile
+  target: development
+
+x-dev-env: &dev-env
+  APP_ENV: development
+
+x-dev-watch: &dev-watch
+  - action: sync+restart
+    path: ../template-app/target/classes
+    target: /app/BOOT-INF/classes
+  - action: rebuild
+    path: ../template-common
+    ignore: &dev-watch-ignore
+      - '**/target/'
+      - '**/src/test/'
+  - action: rebuild
+    path: ../template-contract
+    ignore: *dev-watch-ignore
+  - action: rebuild
+    path: ../template-views
+    ignore: *dev-watch-ignore
+  - action: rebuild
+    path: ../openapi
+  - action: rebuild
+    path: ../template-app/pom.xml
+  - action: rebuild
+    path: ../pom.xml
+
+services:
+  migrate:
+    image: springboot-template:dev
+    environment: *dev-env
+
+  seed:
+    image: springboot-template:dev
+    environment: *dev-env
+
+  api:
+    build: *dev-build
+    image: springboot-template:dev
+    environment: *dev-env
+    develop:
+      watch: *dev-watch
+
+  worker:
+    build: *dev-build
+    image: springboot-template:dev
+    pull_policy: build
+    environment: *dev-env
+    develop:
+      watch: *dev-watch

@@ -1,0 +1,45 @@
+# CI / e2e：生产镜像以 APP_ENV=production 起完整服务栈（任务只在 worker 执行），演示账号由 seed 一次性写入；宿主只在 127.0.0.1 暴露 api（APP_PORT，默认 3000）与 Mailpit 网页端口（MAIL_CLIENT_PORT，默认 8025）
+#
+# 用法：
+#   make e2e-up && make test-e2e && make e2e-down
+
+name: springboot-template-e2e
+
+x-ci-env: &ci-env
+  APP_ENV: production
+  AUTH_JWT_SECRET: test-jwt-secret-0123456789abcdef
+  AUTH_REFRESH_SECRET: test-refresh-secret-0123456789abcdef
+  AUTH_FORGOT_SECRET: test-forgot-secret-0123456789abcdef
+  AUTH_CONFIRM_EMAIL_SECRET: test-confirm-secret-0123456789abcdef
+  SWAGGER_ENABLED: 'true'
+  METRICS_TOKEN: ci_metrics_token_0123456789abcdef
+  THROTTLE_ENABLED: 'true'
+  TRUST_PROXY: '1'
+  HEALTH_MEMORY_HEAP_THRESHOLD_MB: '500'
+
+services:
+  postgres:
+    ports: !reset []
+
+  redis:
+    ports: !reset []
+
+  mailpit:
+    ports: !override
+      - '127.0.0.1:${MAIL_CLIENT_PORT:-8025}:8025'
+
+  migrate:
+    environment: *ci-env
+
+  seed:
+    environment:
+      <<: *ci-env
+      APP_ENV: test
+
+  api:
+    ports: !override
+      - '127.0.0.1:${APP_PORT:-3000}:3000'
+    environment: *ci-env
+
+  worker:
+    environment: *ci-env

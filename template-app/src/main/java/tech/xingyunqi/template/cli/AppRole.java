@@ -10,8 +10,9 @@ import org.springframework.core.env.MapPropertySource;
 
 /**
  * {@code APP_ROLE}：{@code api}（默认）启动 Web；{@code worker} 不启动 Web，运行 JobRunr background server（含 recurring job），连接池上限为
- * {@code WORKER_DATABASE_MAX_CONNECTIONS}；{@code migrate} 跑 Flyway 与 JobRunr 建表后退出；{@code seed} 写入种子数据后退出。{@code api}
- * 只在 {@code JOBS_IN_PROCESS} 为 {@code true}（未设置时非生产视为 {@code true}）时在进程内运行 background server。
+ * {@code WORKER_DATABASE_MAX_CONNECTIONS}；{@code migrate} 跑 Flyway（{@code DB_SCHEMA_OWNER=external} 时不跑）与 JobRunr
+ * 建表后退出； {@code seed}、{@code create-superuser}、{@code permissions-clear-cache} 执行一次后退出。{@code api} 只在
+ * {@code JOBS_IN_PROCESS} 为 {@code true}（未设置时非生产视为 {@code true}）时在进程内运行 background server。
  */
 public final class AppRole implements EnvironmentPostProcessor {
 
@@ -32,12 +33,15 @@ public final class AppRole implements EnvironmentPostProcessor {
                         "spring.main.web-application-type",
                         "none",
                         "spring.flyway.enabled",
-                        "true",
+                        String.valueOf(!new SchemaProperties(
+                                        environment.getProperty(SchemaProperties.OWNER, SchemaProperties.FLYWAY))
+                                .external()),
                         "jobrunr.database.skip-create",
                         "false",
                         BACKGROUND_SERVER,
                         "false");
-            case "seed" -> Map.of("spring.main.web-application-type", "none", BACKGROUND_SERVER, "false");
+            case "seed", "create-superuser", "permissions-clear-cache" ->
+                Map.of("spring.main.web-application-type", "none", BACKGROUND_SERVER, "false");
             case "worker" ->
                 Map.of(
                         "spring.main.web-application-type",

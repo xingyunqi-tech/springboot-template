@@ -1,0 +1,29 @@
+# 测试环境：生产镜像以 APP_ENV=test 起完整服务栈，宿主只暴露 api 与 Mailpit 网页端口，可对其运行 tests/e2e
+#
+# 用法：
+#   docker compose -f docker/docker-compose.base.yaml -f docker/docker-compose.postgres.yaml -f docker/docker-compose.redis.yaml -f docker/docker-compose.test.yaml up --build --wait
+#   make test-e2e APP_URL=http://localhost:3000 MAILPIT_URL=http://localhost:8025
+
+name: springboot-template-test
+
+x-test-env: &test-env
+  APP_ENV: test
+
+services:
+  postgres:
+    ports: !reset []
+
+  redis:
+    ports: !reset []
+
+  migrate:
+    environment: *test-env
+
+  seed:
+    environment: *test-env
+
+  api:
+    environment: *test-env
+
+  worker:
+    environment: *test-env

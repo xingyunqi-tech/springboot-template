@@ -1,0 +1,62 @@
+# Redis（缓存、限流、分布式锁）；RedisInsight 在 profile tools
+#
+# 用法：叠加在 docker-compose.base.yaml 之上
+
+x-redis-env: &redis-env
+  REDIS_ENABLED: 'true'
+  REDIS_HOST: redis
+  REDIS_PORT: '6379'
+
+x-redis-depends: &redis-depends
+  redis:
+    condition: service_healthy
+
+services:
+  redis:
+    image: redis:8.10.3-alpine
+    ports:
+      - '${REDIS_PORT:-6379}:6379'
+    volumes:
+      - redis-data:/data
+    command: ['redis-server', '--appendonly', 'yes', '--maxmemory', '256mb', '--maxmemory-policy', 'noeviction']
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+      start_interval: 1s
+    restart: unless-stopped
+
+  redisinsight:
+    image: redis/redisinsight:3.8.0
+    environment:
+      RI_REDIS_HOST: redis
+      RI_REDIS_PORT: 6379
+    ports:
+      - '${REDIS_INSIGHT_PORT:-5540}:5540'
+    volumes:
+      - redisinsight-data:/data
+    depends_on: *redis-depends
+    profiles:
+      - tools
+
+  migrate:
+    environment: *redis-env
+    depends_on: *redis-depends
+
+  seed:
+    environment: *redis-env
+    depends_on: *redis-depends
+
+  api:
+    environment: *redis-env
+    depends_on: *redis-depends
+
+  worker:
+    environment: *redis-env
+    depends_on: *redis-depends
+
+volumes:
+  redis-data:
+  redisinsight-data:

@@ -10,5 +10,34 @@
     </parent>
 
     <artifactId>tests-e2e</artifactId>
-    <description>黑盒 E2E 测试（-Pe2e，APP_URL）</description>
+    <description>黑盒 E2E 测试（-Pe2e，APP_URL、MAILPIT_URL）</description>
+
+    <properties>
+        <APP_URL>http://localhost:3000</APP_URL>
+        <MAILPIT_URL>http://localhost:8025</MAILPIT_URL>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>tools.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <configuration>
+                    <systemPropertyVariables>
+                        <APP_URL>${APP_URL}</APP_URL>
+                        <MAILPIT_URL>${MAILPIT_URL}</MAILPIT_URL>
+                        <repo.root>${root.dir}</repo.root>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
 </project>

@@ -180,7 +180,7 @@
 - `METRICS_PATH` 的默认指标为 Micrometer 的 JVM / 进程 / 连接池指标（含 `http_server_requests_seconds` 等），nestjs 为 prom-client 的 `process_*`、`nodejs_*`；十个自定义指标的名称、类型、标签、桶、HELP 与样本行格式与 nestjs 相同，实际输出哪些样本行见下一条。
 - `database_query_duration_seconds`（MyBatis 拦截器按 SQL 解析出的 `operation`、`table`）、`cache_hits_total` / `cache_misses_total`、`queue_jobs_total`（任务成功或最后一次失败时）由本服务实际记录，`/metrics` 输出对应样本行；nestjs 02fdb4d 只注册这四个指标、不记录，只输出 `# HELP` / `# TYPE` 两行。
 - 指标 `status="499"`：只在 handler 经输出流写响应体时出错才记录；handler 返回后由容器刷新缓冲区时客户端断开，记录的是最终状态码。
-- `memory_heap` 比较 JVM 已用堆（`MemoryMXBean`）与 `HEALTH_MEMORY_HEAP_THRESHOLD_MB`（默认 300）；nestjs 比较 V8 `heapUsed` 与写死的 300MB。数值不属于契约。
+- `memory_heap` 比较 JVM 最近一次 GC 结束时的整堆占用（尚无 GC 记录时取当前已用量）与 `HEALTH_MEMORY_HEAP_THRESHOLD_MB`（默认 300）；nestjs 比较 V8 `heapUsed` 与写死的 300MB。数值不属于契约。
 - 限流算法为 GCRA（Redis Lua，键 `throttle:<sha256>:default:gcra`），nestjs 为固定窗口（`INCR` 计数，超限后按 TTL 封禁，键 `throttle:<sha256>:default`）：同一规则下 `X-RateLimit-Remaining`、`X-RateLimit-Reset`、`Retry-After` 的取值与 429 出现后的恢复节奏不同（GCRA 每隔 `ttl / limit` 恢复一次配额，nestjs 封禁满一个 TTL）；头名、出现条件、整数格式与 `X-RateLimit-Limit` 相同。两边键不同，共用 Redis 时各自计数。
 - `FILE_DRIVER=s3` 时对象的 `Content-Type` 取用途表中的 mime，文件整段接收到临时文件后再 `PutObject`；nestjs（multer-s3 `AUTO_CONTENT_TYPE`）按内容嗅探并边接收边上传。
 - S3 驱动 `GET files/private/:id` 的 302 响应 `Content-Type` 为 Tomcat 写法 `text/plain;charset=utf-8`（或 `text/html;charset=utf-8`），nestjs 为 `text/plain; charset=utf-8`；正文、`Location`、`Vary: Accept` 相同。

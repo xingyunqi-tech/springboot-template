@@ -1,7 +1,6 @@
 package tech.xingyunqi.template.infrastructure.health;
 
 import java.io.File;
-import java.lang.management.ManagementFactory;
 import java.net.URI;
 import java.net.http.HttpTimeoutException;
 import java.sql.Connection;
@@ -100,8 +99,7 @@ public class HealthIndicators implements DisposableBean {
         this.alipay = alipay;
         this.redisEnabled = RedisAutoConfiguration.redisEnabled(environment);
         this.json = json;
-        this.heapUsed =
-                () -> ManagementFactory.getMemoryMXBean().getHeapMemoryUsage().getUsed();
+        this.heapUsed = HeapUsage::afterGc;
     }
 
     public Result full() {

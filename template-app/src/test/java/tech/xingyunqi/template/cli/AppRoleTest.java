@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.boot.SpringApplication;
 import org.springframework.core.env.MapPropertySource;
 import org.springframework.core.env.StandardEnvironment;
@@ -54,6 +56,23 @@ class AppRoleTest {
         StandardEnvironment env = environment(Map.of("APP_ROLE", "migrate"));
         assertThat(env.getProperty("spring.flyway.enabled")).isEqualTo("true");
         assertThat(env.getProperty("jobrunr.database.skip-create")).isEqualTo("false");
+        assertThat(env.getProperty(AppRole.BACKGROUND_SERVER)).isEqualTo("false");
+    }
+
+    @Test
+    @DisplayName("DB_SCHEMA_OWNER=external 时 migrate 不执行 Flyway，仍建 JobRunr 表")
+    void migrateWithExternalSchemaSkipsFlyway() {
+        StandardEnvironment env = environment(Map.of("APP_ROLE", "migrate", SchemaProperties.OWNER, "external"));
+        assertThat(env.getProperty("spring.flyway.enabled")).isEqualTo("false");
+        assertThat(env.getProperty("jobrunr.database.skip-create")).isEqualTo("false");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"seed", "create-superuser", "permissions-clear-cache"})
+    @DisplayName("一次性命令不启动 Web 与 background server")
+    void oneShotRoles(String role) {
+        StandardEnvironment env = environment(Map.of("APP_ROLE", role));
+        assertThat(env.getProperty("spring.main.web-application-type")).isEqualTo("none");
         assertThat(env.getProperty(AppRole.BACKGROUND_SERVER)).isEqualTo("false");
     }
 }

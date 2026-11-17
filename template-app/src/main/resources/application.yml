@@ -13,6 +13,8 @@ app:
     limit: ${THROTTLE_LIMIT:100}
   database:
     connection-timeout-ms: ${DATABASE_CONNECTION_TIMEOUT_MS:10000}
+  schema:
+    owner: ${DB_SCHEMA_OWNER:flyway}
   metrics:
     enabled: ${METRICS_ENABLED:true}
     path: ${METRICS_PATH:metrics}

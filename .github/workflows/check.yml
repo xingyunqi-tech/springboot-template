@@ -1,0 +1,341 @@
+# 代码质量检查：lint、workflow-lint、type-check、test、migrations、contract、security、build、image-scan、e2e、parity
+# 每个 job 调用与本地相同的 Makefile 目标
+
+name: Check
+
+on:
+  push:
+    branches: [main, master, 'release/**']
+  pull_request:
+    branches: [main, master, 'release/**']
+  workflow_dispatch:
+
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  NESTJS_REPOSITORY: xingyunqi-tech/nestjs-template
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+
+      - run: make lint
+
+      - run: make hadolint
+
+  workflow-lint:
+    name: Workflow Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - run: make workflow-lint
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  type-check:
+    name: Type Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+
+      - run: make type-check
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+
+      - run: make test-ci
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage
+          path: coverage-report/target/site/jacoco-aggregate
+          if-no-files-found: ignore
+
+  migrations:
+    name: Migrations
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+
+      - run: make migrations
+
+  contract:
+    name: Contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+
+      - run: make test-contract
+
+  security:
+    name: Security
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+
+      - name: Dependency audit
+        run: make vuln
+
+      - name: Secret scan
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [[ -n "$BASE_SHA" && ! "$BASE_SHA" =~ ^0+$ ]] && git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null; then
+            log_opts="$BASE_SHA..HEAD"
+          else
+            log_opts="-1"
+          fi
+          make gitleaks GITLEAKS_LOG_OPTS="$log_opts"
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+
+      - run: make build
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sbom
+          path: template-app/target/classes/META-INF/sbom/application.cdx.json
+
+  image-scan:
+    name: Image Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - run: make image-scan
+
+  e2e:
+    name: E2E (PostgreSQL)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [lint, type-check, test, build, migrations, workflow-lint, security]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+
+      - run: make e2e 2>&1 | tee e2e.log
+
+      - name: Upload logs
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-logs
+          path: e2e.log
+
+  parity:
+    name: Parity (nestjs)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [build, migrations]
+    env:
+      NESTJS_DIR: ${{ github.workspace }}/.nestjs
+      NESTJS_PORT: 3001
+      PARITY_TARGETS: java=http://localhost:3000,nestjs=http://localhost:3001
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Read pinned nestjs commit
+        id: source
+        run: echo "commit=$(sed -n 's/^commit=//p' openapi/SOURCE)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ env.NESTJS_REPOSITORY }}
+          ref: ${{ steps.source.outputs.commit }}
+          path: .nestjs
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+
+      - name: Re-export shared artifacts
+        run: make openapi-sync
+
+      - name: Compare shared artifacts
+        run: |
+          paths=(openapi db/nestjs-schema.sql tests/contract/fixtures/validation-cases.json)
+          if [[ -n "$(git status --porcelain -- "${paths[@]}")" ]]; then
+            echo "::error::nestjs 固定提交重新导出的共享产物与入库版本不一致"
+            git status --short -- "${paths[@]}"
+            git --no-pager diff --stat -- "${paths[@]}"
+            exit 1
+          fi
+
+      - name: Start nestjs
+        run: make nestjs-up
+
+      - name: Java env
+        run: |
+          {
+            grep -vE '^(APP_NAME|REDIS_ENABLED|THROTTLE_ENABLED|TRUST_PROXY)=' .env.example
+            grep -E '^(APP_NAME|AUTH_[A-Z_]+)=' "$NESTJS_DIR/env-example-relational" | tr -d '"'
+            echo 'REDIS_ENABLED=true'
+            echo 'THROTTLE_ENABLED=true'
+            echo 'TRUST_PROXY=1'
+          } >> "$GITHUB_ENV"
+
+      - name: Start java
+        run: |
+          make infra
+          ./mvnw -q -pl template-app -am -DskipTests package
+          jar="$(find template-app/target -maxdepth 1 -name 'template-app-*.jar' ! -name '*-plain.jar' | head -1)"
+          echo "APP_JAR=$jar" >> "$GITHUB_ENV"
+          APP_ROLE=migrate java -jar "$jar"
+          APP_ROLE=seed java -jar "$jar"
+          nohup java -jar "$jar" > "$RUNNER_TEMP/java.log" 2>&1 &
+          APP_ROLE=worker nohup java -jar "$jar" > "$RUNNER_TEMP/java-worker.log" 2>&1 &
+          for i in $(seq 1 90); do
+            curl -sf --max-time 5 -o /dev/null http://localhost:3000/api/v1/health/live && break
+            if [[ $i -eq 90 ]]; then
+              echo "::error::http://localhost:3000 未能在 180s 内就绪"
+              exit 1
+            fi
+            sleep 2
+          done
+
+      - name: tests/parity
+        run: make test-parity
+
+      - name: nestjs auth.e2e-spec.ts against java
+        run: |
+          THROTTLE_ENABLED=false APP_PORT=3002 nohup java -jar "$APP_JAR" > "$RUNNER_TEMP/java-spec.log" 2>&1 &
+          for i in $(seq 1 60); do
+            curl -sf --max-time 5 -o /dev/null http://localhost:3002/api/v1/health/live && break
+            if [[ $i -eq 60 ]]; then
+              echo "::error::http://localhost:3002 未能在 120s 内就绪"
+              exit 1
+            fi
+            sleep 2
+          done
+          commit="$(git -C "$NESTJS_DIR" rev-parse HEAD)"
+          docker run --rm --network host -e APP_PORT=3002 "fastapi-temp/nestjs-ref:${commit:0:12}-builder" \
+            pnpm exec vitest run --config vitest.e2e.config.mts test/user/auth.e2e-spec.ts
+
+      - name: Collect logs on failure
+        if: failure()
+        run: |
+          cp "$RUNNER_TEMP"/java*.log . || true
+          docker logs springboot-template-nestjs-api-1 > nestjs.log 2>&1 || true
+
+      - name: Upload logs
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: parity-logs
+          path: |
+            java.log
+            java-worker.log
+            java-spec.log
+            nestjs.log

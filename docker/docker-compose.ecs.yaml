@@ -1,0 +1,144 @@
+# ECS 服务器部署配置（镜像由 deploy workflow 推送，服务器拉取）
+#
+# 首次部署：
+#   1. 在服务器上创建部署目录（对应 ALIYUN_PATH / TENCENT_PATH secret）
+#   2. 部署目录放置 .env（参考 docker/.env.ecs.example）
+#   3. 后续部署由 CI/CD 同步本文件与 manage.sh 并重启服务
+#
+# 手动操作：
+#   ./deploy/manage.sh start|stop|restart|logs|status|health
+
+name: springboot-template
+
+x-app: &app
+  image: ${IMAGE_FULL_NAME:-ghcr.io/xingyunqi-tech/springboot-template:latest}
+  env_file:
+    - ../.env
+  networks:
+    - app-network
+
+x-app-env: &app-env
+  APP_ENV: production
+  APP_PORT: '3000'
+  DATABASE_HOST: postgres
+  DATABASE_PORT: '5432'
+  REDIS_ENABLED: 'true'
+  REDIS_HOST: redis
+  REDIS_PORT: '6379'
+  HEALTH_MEMORY_HEAP_THRESHOLD_MB: '500'
+
+services:
+  migrate:
+    <<: *app
+    container_name: springboot-migrate
+    environment:
+      <<: *app-env
+      APP_ROLE: migrate
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: 'no'
+
+  # manage.sh start 在 .env 中 RUN_SEEDS=true 时执行
+  seed:
+    <<: *app
+    container_name: springboot-seed
+    environment:
+      <<: *app-env
+      APP_ROLE: seed
+    profiles: ['seed']
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: 'no'
+
+  api:
+    <<: *app
+    container_name: springboot-api
+    environment:
+      <<: *app-env
+      APP_ROLE: api
+    healthcheck:
+      test: ['CMD-SHELL', 'java -XX:+UseSerialGC -Xmx16m -XX:TieredStopAtLevel=1 -cp /app/probe HealthProbe "http://localhost:$${APP_PORT:-3000}/api/v1/health/live"']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+      start_interval: 2s
+    ports:
+      - '${APP_PORT:-3000}:3000'
+    volumes:
+      - uploaded-files:/app/files
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    <<: *app
+    container_name: springboot-worker
+    environment:
+      <<: *app-env
+      APP_ROLE: worker
+    volumes:
+      - uploaded-files:/app/files
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:18.6-alpine
+    container_name: springboot-postgres
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    environment:
+      POSTGRES_USER: ${DATABASE_USERNAME:-root}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-secret}
+      POSTGRES_DB: ${DATABASE_NAME:-api}
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${DATABASE_USERNAME:-root} -d ${DATABASE_NAME:-api}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+      start_interval: 1s
+    restart: unless-stopped
+    networks:
+      - app-network
+
+  redis:
+    image: redis:8.10.3-alpine
+    container_name: springboot-redis
+    volumes:
+      - redis-data:/data
+    command: ['redis-server', '--appendonly', 'yes', '--maxmemory', '256mb', '--maxmemory-policy', 'noeviction']
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+      start_interval: 1s
+    restart: unless-stopped
+    networks:
+      - app-network
+
+volumes:
+  postgres-data:
+  redis-data:
+  uploaded-files:
+
+networks:
+  app-network:
+    driver: bridge
