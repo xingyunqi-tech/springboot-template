@@ -153,6 +153,9 @@ jobs:
           java-version: '25'
           cache: maven
 
+      - name: Resolve dependencies
+        run: ./mvnw -B -q dependency:go-offline
+
       - name: Dependency audit
         run: make vuln
 
