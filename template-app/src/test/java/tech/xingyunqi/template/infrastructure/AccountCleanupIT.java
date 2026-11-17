@@ -277,7 +277,8 @@ class AccountCleanupIT {
 
         runner.run(userId);
 
-        assertThat(runner.cleanerNames()).containsExactly("probe", "users", "files");
+        assertThat(runner.cleanerNames())
+                .containsExactly("probe", "favorites", "feedbacks", "notifications", "addresses", "users", "files");
         assertThat(PROBED).contains(userId);
         assertThat(jdbc.queryForMap(
                         "select \"photoId\" is null as detached, \"updatedAt\" > now() - interval '1 hour' as touched"

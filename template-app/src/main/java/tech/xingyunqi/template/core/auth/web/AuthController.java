@@ -14,19 +14,30 @@ import tech.xingyunqi.template.common.web.route.PublicEndpoint;
 import tech.xingyunqi.template.common.web.route.RefreshTokenAuth;
 import tech.xingyunqi.template.common.web.route.Throttle;
 import tech.xingyunqi.template.contract.api.AuthApi;
+import tech.xingyunqi.template.contract.model.AuthAlipayLoginDto;
 import tech.xingyunqi.template.contract.model.AuthChangePasswordDto;
 import tech.xingyunqi.template.contract.model.AuthConfirmEmailDto;
 import tech.xingyunqi.template.contract.model.AuthDeleteAccountDto;
 import tech.xingyunqi.template.contract.model.AuthEmailLoginDto;
 import tech.xingyunqi.template.contract.model.AuthForgotPasswordDto;
+import tech.xingyunqi.template.contract.model.AuthPhoneLoginDto;
+import tech.xingyunqi.template.contract.model.AuthPhoneRegisterDto;
+import tech.xingyunqi.template.contract.model.AuthPhoneResetPasswordDto;
+import tech.xingyunqi.template.contract.model.AuthPhoneSmsLoginDto;
 import tech.xingyunqi.template.contract.model.AuthRegisterLoginDto;
 import tech.xingyunqi.template.contract.model.AuthResetPasswordDto;
+import tech.xingyunqi.template.contract.model.AuthSendCodeDto;
 import tech.xingyunqi.template.contract.model.AuthUpdateDto;
+import tech.xingyunqi.template.contract.model.AuthWechatLoginDto;
+import tech.xingyunqi.template.contract.model.AuthWechatPhoneLoginDto;
 import tech.xingyunqi.template.contract.model.RefreshResponseDto;
 import tech.xingyunqi.template.contract.model.SessionResponseDto;
 import tech.xingyunqi.template.core.auth.AuthService;
+import tech.xingyunqi.template.core.auth.PhoneAuthService;
+import tech.xingyunqi.template.core.auth.SocialAuthService;
 import tech.xingyunqi.template.core.users.web.UserInputs;
 import tech.xingyunqi.template.core.users.web.UserViews;
+import tech.xingyunqi.template.integrations.sms.SmsCodeType;
 import tech.xingyunqi.template.views.LoginResponseView;
 import tech.xingyunqi.template.views.UserView;
 import tools.jackson.databind.JsonNode;
@@ -35,11 +46,16 @@ import tools.jackson.databind.JsonNode;
 class AuthController implements AuthApi {
 
     private final AuthService auth;
+    private final PhoneAuthService phone;
+    private final SocialAuthService social;
     private final UserViews views;
     private final AppProperties app;
 
-    AuthController(AuthService auth, UserViews views, AppProperties app) {
+    AuthController(
+            AuthService auth, PhoneAuthService phone, SocialAuthService social, UserViews views, AppProperties app) {
         this.auth = auth;
+        this.phone = phone;
+        this.social = social;
         this.views = views;
         this.app = app;
     }
@@ -48,16 +64,7 @@ class AuthController implements AuthApi {
     @PublicEndpoint
     @Throttle(limit = 5, ttl = 60_000)
     public LoginResponseView loginWithEmail(AuthEmailLoginDto body, @Nullable Object acceptLanguage) {
-        ClientInfo client = ClientInfo.of(CurrentRequest.get(), app.trustProxy());
-        AuthService.Login login = auth.loginWithEmail(
-                required(body.email()),
-                required(body.password()),
-                new AuthService.Client(client.ip(), client.userAgent()));
-        return new LoginResponseView(
-                login.tokens().token(),
-                login.tokens().refreshToken(),
-                login.tokens().tokenExpires(),
-                views.of(login.user(), UserViews.Group.ME));
+        return view(auth.loginWithEmail(required(body.email()), required(body.password()), client()));
     }
 
     @Override
@@ -167,6 +174,81 @@ class AuthController implements AuthApi {
     @AuthenticatedOnly
     public void revokeOtherSessions(@Nullable Object acceptLanguage) {
         auth.revokeOtherSessions(AuthContext.current());
+    }
+
+    @Override
+    @PublicEndpoint
+    @Throttle(limit = 3, ttl = 60_000)
+    public void sendSmsCode(AuthSendCodeDto body, @Nullable Object acceptLanguage) {
+        AuthSendCodeDto.TypeEnum type = body.type();
+        phone.sendCode(
+                required(body.phone()), type == null ? SmsCodeType.LOGIN : SmsCodeType.fromValue(type.getValue()));
+    }
+
+    @Override
+    @PublicEndpoint
+    @Throttle(limit = 5, ttl = 60_000)
+    public LoginResponseView loginWithPhone(AuthPhoneLoginDto body, @Nullable Object acceptLanguage) {
+        return view(phone.loginWithPassword(required(body.phone()), required(body.password()), client()));
+    }
+
+    @Override
+    @PublicEndpoint
+    @Throttle(limit = 5, ttl = 60_000)
+    public LoginResponseView loginWithSms(AuthPhoneSmsLoginDto body, @Nullable Object acceptLanguage) {
+        return view(phone.loginWithSms(required(body.phone()), required(body.code()), client()));
+    }
+
+    @Override
+    @PublicEndpoint
+    @Throttle(limit = 3, ttl = 60_000)
+    public LoginResponseView registerWithPhone(AuthPhoneRegisterDto body, @Nullable Object acceptLanguage) {
+        return view(phone.register(
+                required(body.phone()), required(body.code()), required(body.password()), body.nickname(), client()));
+    }
+
+    @Override
+    @PublicEndpoint
+    @Throttle(limit = 5, ttl = 300_000)
+    public void resetPasswordByPhone(AuthPhoneResetPasswordDto body, @Nullable Object acceptLanguage) {
+        phone.resetPassword(required(body.phone()), required(body.code()), required(body.password()));
+    }
+
+    @Override
+    @PublicEndpoint
+    @Throttle(limit = 10, ttl = 60_000)
+    public LoginResponseView loginWithWechat(AuthWechatLoginDto body, @Nullable Object acceptLanguage) {
+        SocialAuthService.WechatLoginType type = body.type() == AuthWechatLoginDto.TypeEnum.MINI_APP
+                ? SocialAuthService.WechatLoginType.MINI_APP
+                : SocialAuthService.WechatLoginType.APP;
+        return view(social.wechatLogin(required(body.code()), type, body.nickname(), client()));
+    }
+
+    @Override
+    @PublicEndpoint
+    @Throttle(limit = 10, ttl = 60_000)
+    public LoginResponseView loginWithWechatPhone(AuthWechatPhoneLoginDto body, @Nullable Object acceptLanguage) {
+        return view(social.wechatPhoneLogin(required(body.loginCode()), required(body.phoneCode()), client()));
+    }
+
+    @Override
+    @PublicEndpoint
+    @Throttle(limit = 10, ttl = 60_000)
+    public LoginResponseView loginWithAlipay(AuthAlipayLoginDto body, @Nullable Object acceptLanguage) {
+        return view(social.alipayLogin(required(body.authCode()), client()));
+    }
+
+    private AuthService.Client client() {
+        ClientInfo client = ClientInfo.of(CurrentRequest.get(), app.trustProxy());
+        return new AuthService.Client(client.ip(), client.userAgent());
+    }
+
+    private LoginResponseView view(AuthService.Login login) {
+        return new LoginResponseView(
+                login.tokens().token(),
+                login.tokens().refreshToken(),
+                login.tokens().tokenExpires(),
+                views.of(login.user(), UserViews.Group.ME, login.created()));
     }
 
     private JsonNode validatedBody() {

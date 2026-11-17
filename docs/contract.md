@@ -2,46 +2,12 @@
 
 本文件由 `template-app` 的 `OpenApiContractIT` 生成（`UPDATE_CONTRACT_DOC=1 make test-contract`），与实际不符时测试失败；「与 nestjs 的行为差异」一节为手写，生成时原样保留。
 
-## 基线中未实现的接口（192 个）
+## 基线中未实现的接口（148 个）
 
 请求这些接口返回 404 信封 `Cannot <METHOD> <path>`。
 
 | 方法 | 路径 | operationId | tag |
 |---|---|---|---|
-| POST | `/api/v1/auth/phone/send-code` | sendSmsCode | Auth |
-| POST | `/api/v1/auth/phone/login` | loginWithPhone | Auth |
-| POST | `/api/v1/auth/phone/sms-login` | loginWithSms | Auth |
-| POST | `/api/v1/auth/phone/register` | registerWithPhone | Auth |
-| POST | `/api/v1/auth/phone/reset-password` | resetPasswordByPhone | Auth |
-| POST | `/api/v1/auth/wechat/login` | loginWithWechat | Auth |
-| POST | `/api/v1/auth/wechat/phone-login` | loginWithWechatPhone | Auth |
-| POST | `/api/v1/auth/alipay/login` | loginWithAlipay | Auth |
-| GET | `/api/v1/notifications` | getNotifications | Notifications |
-| GET | `/api/v1/notifications/unread-count` | getUnreadCount | Notifications |
-| GET | `/api/v1/notifications/settings` | getNotificationSettings | Notifications |
-| PUT | `/api/v1/notifications/settings` | updateNotificationSettings | Notifications |
-| GET | `/api/v1/notifications/{id}` | getNotification | Notifications |
-| DELETE | `/api/v1/notifications/{id}` | deleteNotification | Notifications |
-| POST | `/api/v1/notifications/read-all` | markAllNotificationsAsRead | Notifications |
-| POST | `/api/v1/notifications/{id}/read` | markNotificationAsRead | Notifications |
-| GET | `/api/v1/addresses` | getAddresses | Addresses |
-| POST | `/api/v1/addresses` | createAddress | Addresses |
-| GET | `/api/v1/addresses/default` | getDefaultAddress | Addresses |
-| GET | `/api/v1/addresses/{id}` | getAddress | Addresses |
-| PUT | `/api/v1/addresses/{id}` | updateAddress | Addresses |
-| DELETE | `/api/v1/addresses/{id}` | deleteAddress | Addresses |
-| PUT | `/api/v1/addresses/{id}/default` | setDefaultAddress | Addresses |
-| GET | `/api/v1/regions/provinces` | getProvinces | Regions |
-| GET | `/api/v1/regions/cities/{provinceCode}` | getCities | Regions |
-| GET | `/api/v1/regions/districts/{cityCode}` | getDistricts | Regions |
-| GET | `/api/v1/regions/code/{code}` | getRegionByCode | Regions |
-| GET | `/api/v1/regions/tree` | getRegionTree | Regions |
-| GET | `/api/v1/regions` | queryRegions | Regions |
-| GET | `/api/v1/favorites` | getFavorites | Favorites |
-| POST | `/api/v1/favorites` | createFavorite | Favorites |
-| POST | `/api/v1/favorites/check` | checkFavorite | Favorites |
-| POST | `/api/v1/favorites/toggle` | toggleFavorite | Favorites |
-| DELETE | `/api/v1/favorites/{id}` | deleteFavorite | Favorites |
 | GET | `/api/v1/practice/sessions` | getPracticeSessions | Practice |
 | POST | `/api/v1/practice/sessions` | createPracticeSession | Practice |
 | GET | `/api/v1/practice/sessions/ongoing` | getOngoingPracticeSessions | Practice |
@@ -120,12 +86,6 @@
 | POST | `/api/v1/admin/paper-rules/{id}/preview` | adminPreviewPaperRule | Admin Paper Rules |
 | GET | `/api/v1/admin/subjects/{id}/daily-sets` | adminGetDailyQuestionSets | Admin Daily Question Sets |
 | POST | `/api/v1/admin/subjects/{id}/daily-sets/{date}/regenerate` | adminRegenerateDailyQuestionSet | Admin Daily Question Sets |
-| GET | `/api/v1/config/{key}` | getConfig | Config |
-| PUT | `/api/v1/config/{key}` | upsertConfig | Config |
-| GET | `/api/v1/config/admin/{key}` | getConfigAsAdmin | Config |
-| GET | `/api/v1/feedbacks` | getFeedbacks | Feedbacks |
-| POST | `/api/v1/feedbacks` | createFeedback | Feedbacks |
-| GET | `/api/v1/feedbacks/{id}` | getFeedback | Feedbacks |
 | GET | `/api/v1/orders` | getOrders | Orders |
 | POST | `/api/v1/orders` | createOrder | Orders |
 | GET | `/api/v1/orders/{id}` | getOrder | Orders |
@@ -182,8 +142,6 @@
 | GET | `/api/v1/admin/question-reports` | adminGetQuestionReports | Admin Question Reports |
 | GET | `/api/v1/admin/question-reports/{id}` | adminGetQuestionReport | Admin Question Reports |
 | PATCH | `/api/v1/admin/question-reports/{id}` | adminUpdateQuestionReport | Admin Question Reports |
-| GET | `/api/v1/me/consents` | getMyConsents | Consents |
-| POST | `/api/v1/me/consents` | agreeConsent | Consents |
 | GET | `/api/v1/ai/conversations` | getAiConversations | AI |
 | POST | `/api/v1/ai/conversations` | createAiConversation | AI |
 | GET | `/api/v1/ai/conversations/{id}/messages` | getAiMessages | AI |
@@ -196,8 +154,6 @@
 | POST | `/api/v1/ai/messages/{id}/report` | reportAiMessage | AI |
 | GET | `/api/v1/ai/quota` | getAiQuota | AI |
 | GET | `/api/v1/admin/ai/usage` | adminGetAiUsage | Admin AI |
-| GET | `/api/v1/app-profile` | getAppProfile | App Profile |
-| PUT | `/api/v1/admin/app-profile` | adminUpdateAppProfile | Admin App Profile |
 | POST | `/api/v1/game/auth/login` | gameLogin | Game Auth |
 | POST | `/api/v1/game/auth/refresh` | gameRefreshToken | Game Auth |
 

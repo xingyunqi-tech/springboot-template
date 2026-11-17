@@ -28,11 +28,13 @@ import tech.xingyunqi.template.core.permissions.StatusIds;
 import tech.xingyunqi.template.core.session.SessionService;
 import tech.xingyunqi.template.core.session.domain.Session;
 import tech.xingyunqi.template.core.users.UsersService;
+import tech.xingyunqi.template.core.users.domain.CreatedRelations;
 import tech.xingyunqi.template.core.users.domain.Patch;
 import tech.xingyunqi.template.core.users.domain.User;
 import tech.xingyunqi.template.core.users.domain.UserInput;
 import tech.xingyunqi.template.integrations.mail.MailMessage;
 import tech.xingyunqi.template.integrations.mail.Mailer;
+import tech.xingyunqi.template.modules.notifications.NotificationsService;
 import tools.jackson.databind.node.ObjectNode;
 
 /** 邮箱登录 / 注册、邮箱确认、找回密码、令牌刷新、个人资料、改密、注销与会话管理。 */
@@ -42,8 +44,8 @@ public class AuthService {
     /** 签发的令牌，键顺序同 nestjs。 */
     public record Tokens(String refreshToken, String token, long tokenExpires) {}
 
-    /** 登录结果。 */
-    public record Login(Tokens tokens, User user) {}
+    /** 登录结果；{@code created} 为本次新建用户时响应中应输出的关联。 */
+    public record Login(Tokens tokens, User user, @Nullable CreatedRelations created) {}
 
     /** 请求方的 IP 与 User-Agent。 */
     public record Client(@Nullable String ip, @Nullable String userAgent) {}
@@ -59,6 +61,7 @@ public class AuthService {
     private final Mailer mailer;
     private final SmsCodeVerifier sms;
     private final WriteTransactions transactions;
+    private final NotificationsService notifications;
 
     public AuthService(
             AuthProperties properties,
@@ -68,7 +71,8 @@ public class AuthService {
             SessionService sessions,
             Mailer mailer,
             SmsCodeVerifier sms,
-            WriteTransactions transactions) {
+            WriteTransactions transactions,
+            NotificationsService notifications) {
         this.properties = properties;
         this.jwt = jwt;
         this.clock = clock;
@@ -77,6 +81,7 @@ public class AuthService {
         this.mailer = mailer;
         this.sms = sms;
         this.transactions = transactions;
+        this.notifications = notifications;
     }
 
     public Login loginWithEmail(String email, String password, Client client) {
@@ -88,20 +93,37 @@ public class AuthService {
         if (!StatusIds.allowedForAuth(user.statusId())) {
             throw HttpStatusException.validationError("email", "userNotActive");
         }
+        return login(user, null, client);
+    }
+
+    /** 创建会话并签发令牌；新建用户时 access 令牌的 role 只含 id。 */
+    Login login(User user, @Nullable CreatedRelations created, Client client) {
         String hash = sessionHash();
         int sessionId = sessions.create(user.id(), hash, client.userAgent(), client.ip());
-        return new Login(tokens(user.id(), rolePayload(user), sessionId, hash), user);
+        Object role =
+                created == null ? rolePayload(user) : created.roleId() == null ? null : Map.of("id", created.roleId());
+        return new Login(tokens(user.id(), role, sessionId, hash), user, created);
     }
 
     public void register(UserInput data) {
         UserInput input = data.withRole(Patch.of(new UserInput.Ref(RoleIds.USER)))
                 .withStatus(Patch.of(new UserInput.Ref(StatusIds.INACTIVE)));
         User user = users.create(input).user();
+        initializeNotificationSettings(user.id());
         Map<String, Object> claims = Map.of("confirmEmailUserId", user.id());
         String hash = jwt.sign(claims, properties.confirmEmailSecret(), properties.confirmEmailExpires());
         String to = data.email().value();
         if (to != null) {
             sendAfterCommit(new MailMessage("activation", to, Map.of("hash", hash)));
+        }
+    }
+
+    /** 初始化默认通知设置；失败只记日志，不影响注册。 */
+    void initializeNotificationSettings(int userId) {
+        try {
+            notifications.initializeDefaultSettings(userId);
+        } catch (RuntimeException e) {
+            LOG.warn("Failed to initialize notification settings for user {}", userId, e);
         }
     }
 

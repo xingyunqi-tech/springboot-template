@@ -19,6 +19,14 @@ operations:
   - getMySessions
   - revokeMySession
   - revokeOtherSessions
+  - sendSmsCode
+  - loginWithPhone
+  - loginWithSms
+  - registerWithPhone
+  - resetPasswordByPhone
+  - loginWithWechat
+  - loginWithWechatPhone
+  - loginWithAlipay
   - operationId: createUser
     permissions: [user:create]
   - operationId: getUsers
@@ -32,6 +40,45 @@ operations:
   - operationId: adminRetriggerAccountCleanup
     permissions: [user:delete]
   - uploadFile
+  - getNotifications
+  - getUnreadCount
+  - getNotification
+  - markNotificationAsRead
+  - markAllNotificationsAsRead
+  - deleteNotification
+  - getNotificationSettings
+  - updateNotificationSettings
+  - getAddresses
+  - getDefaultAddress
+  - getAddress
+  - createAddress
+  - updateAddress
+  - deleteAddress
+  - setDefaultAddress
+  - getFavorites
+  - createFavorite
+  - deleteFavorite
+  - toggleFavorite
+  - checkFavorite
+  - createFeedback
+  - getFeedbacks
+  - getFeedback
+  - getConfig
+  - operationId: getConfigAsAdmin
+    permissions: [system:config]
+  - operationId: upsertConfig
+    permissions: [system:config]
+  - getProvinces
+  - getCities
+  - getDistricts
+  - getRegionByCode
+  - getRegionTree
+  - queryRegions
+  - getAppProfile
+  - operationId: adminUpdateAppProfile
+    permissions: [system:config]
+  - getMyConsents
+  - agreeConsent
 undocumentedOperations:
   - operationId: readPrivateFile
     method: get

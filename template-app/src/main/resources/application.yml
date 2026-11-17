@@ -22,8 +22,29 @@ app:
   wechat:
     app-id: ${WECHAT_APP_ID:}
     app-secret: ${WECHAT_APP_SECRET:}
+    mini-app-id: ${WECHAT_MINI_APP_ID:}
+    mini-app-secret: ${WECHAT_MINI_APP_SECRET:}
+    mini-program-state: ${WECHAT_MINI_PROGRAM_STATE:formal}
+    subscribe-order-paid-template-id: ${WECHAT_SUBSCRIBE_ORDER_PAID_TEMPLATE_ID:}
+    subscribe-order-paid-fields: ${WECHAT_SUBSCRIBE_ORDER_PAID_FIELDS:}
   alipay:
     app-id: ${ALIPAY_APP_ID:}
+    private-key: ${ALIPAY_PRIVATE_KEY:}
+    gateway: ${ALIPAY_GATEWAY:}
+    sign-type: ${ALIPAY_SIGN_TYPE:RSA2}
+    charset: ${ALIPAY_CHARSET:utf-8}
+    sandbox: ${ALIPAY_SANDBOX:false}
+  sms:
+    access-key-id: ${SMS_ACCESS_KEY_ID:}
+    access-key-secret: ${SMS_ACCESS_KEY_SECRET:}
+    sign-name: ${SMS_SIGN_NAME:}
+    template-code: ${SMS_TEMPLATE_CODE:}
+    code-expires: ${SMS_CODE_EXPIRES:300}
+    code-length: ${SMS_CODE_LENGTH:6}
+    endpoint: ${SMS_ENDPOINT:dysmsapi.aliyuncs.com}
+    mock-mode: ${SMS_MOCK_MODE:false}
+    max-attempts: ${SMS_MAX_ATTEMPTS:5}
+    resend-interval: ${SMS_RESEND_INTERVAL:60}
   mail:
     host: ${MAIL_HOST:}
     port: ${MAIL_PORT:587}

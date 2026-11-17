@@ -16,12 +16,15 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.Enumeration;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Pattern;
 import org.jspecify.annotations.Nullable;
 import tech.xingyunqi.template.common.core.exception.HttpStatusException;
+import tech.xingyunqi.template.common.web.validation.js.Js;
 import tech.xingyunqi.template.infrastructure.files.FilePurpose;
 
 /** Express {@code res.sendFile}（send 1.x）与 {@code res.redirect} 的输出。 */
@@ -33,6 +36,8 @@ final class SendFile {
     private static final Pattern NO_CACHE = Pattern.compile("(?:^|,)\\s*?no-cache\\s*?(?:,|$)");
     private static final Pattern BYTES_RANGE = Pattern.compile("^ *bytes=");
     private static final Pattern DIGITS = Pattern.compile("\\d+");
+    private static final Set<String> JOINED_HEADERS =
+            Set.of("range", "if-match", "if-none-match", "if-range", "cache-control");
     /** mime-types {@code contentType()}：上传用途表中出现的扩展名。 */
     private static final Map<String, String> CONTENT_TYPES = Map.ofEntries(
             Map.entry("jpg", "image/jpeg"),
@@ -83,8 +88,8 @@ final class SendFile {
         response.setContentType(contentType(path));
         long offset = 0;
         long length = size;
-        String range = request.getHeader("Range");
-        if (range != null && BYTES_RANGE.matcher(range).find() && isRangeFresh(request, etag, lastModified)) {
+        String range = header(request, "Range");
+        if (BYTES_RANGE.matcher(range).find() && isRangeFresh(request, etag, lastModified)) {
             long[] parsed = singleRange(range, size);
             if (parsed != null && parsed.length == 0) {
                 throw new HttpStatusException(416, "Range Not Satisfiable", Map.of("Content-Range", "bytes */" + size));
@@ -146,30 +151,37 @@ final class SendFile {
         return type == null ? "application/octet-stream" : type;
     }
 
+    /** Node 对重复请求头的处理：{@link #JOINED_HEADERS} 以 {@code ", "} 合并，其余只取第一个；没有该请求头时为空串。 */
+    static String header(HttpServletRequest request, String name) {
+        Enumeration<String> values = request.getHeaders(name);
+        if (values == null || !values.hasMoreElements()) {
+            return "";
+        }
+        String first = values.nextElement();
+        if (!JOINED_HEADERS.contains(name.toLowerCase(Locale.ROOT))) {
+            return first;
+        }
+        StringBuilder joined = new StringBuilder(first);
+        while (values.hasMoreElements()) {
+            joined.append(", ").append(values.nextElement());
+        }
+        return joined.toString();
+    }
+
     private static boolean isConditional(HttpServletRequest request) {
-        return request.getHeader("If-Match") != null
-                || request.getHeader("If-Unmodified-Since") != null
-                || request.getHeader("If-None-Match") != null
-                || request.getHeader("If-Modified-Since") != null;
+        return !header(request, "If-Match").isEmpty()
+                || !header(request, "If-Unmodified-Since").isEmpty()
+                || !header(request, "If-None-Match").isEmpty()
+                || !header(request, "If-Modified-Since").isEmpty();
     }
 
     /** send {@code isPreconditionFailure}。 */
     static boolean isPreconditionFailure(HttpServletRequest request, String etag, String lastModified) {
-        String match = request.getHeader("If-Match");
-        if (match != null && !match.isEmpty()) {
-            if ("*".equals(match)) {
-                return false;
-            }
-            for (String token : match.split(",", -1)) {
-                String candidate = token.strip();
-                if (candidate.equals(etag) || ("W/" + candidate).equals(etag) || candidate.equals("W/" + etag)) {
-                    return false;
-                }
-            }
-            return true;
+        String match = header(request, "If-Match");
+        if (!match.isEmpty()) {
+            return !"*".equals(match) && parseTokenList(match).stream().noneMatch(token -> etagMatches(token, etag));
         }
-        String unmodifiedSince = request.getHeader("If-Unmodified-Since");
-        Long since = unmodifiedSince == null ? null : parseHttpDate(unmodifiedSince);
+        Long since = parseHttpDate(header(request, "If-Unmodified-Since"));
         if (since != null) {
             Long modified = parseHttpDate(lastModified);
             return modified == null || modified > since;
@@ -179,29 +191,20 @@ final class SendFile {
 
     /** npm {@code fresh}。 */
     static boolean isFresh(HttpServletRequest request, String etag, String lastModified) {
-        String modifiedSince = request.getHeader("If-Modified-Since");
-        String noneMatch = request.getHeader("If-None-Match");
-        if (isEmpty(modifiedSince) && isEmpty(noneMatch)) {
+        String modifiedSince = header(request, "If-Modified-Since");
+        String noneMatch = header(request, "If-None-Match");
+        if (modifiedSince.isEmpty() && noneMatch.isEmpty()) {
             return false;
         }
-        String cacheControl = request.getHeader("Cache-Control");
-        if (cacheControl != null && NO_CACHE.matcher(cacheControl).find()) {
+        if (NO_CACHE.matcher(header(request, "Cache-Control")).find()) {
             return false;
         }
-        if (!isEmpty(noneMatch) && !"*".equals(noneMatch)) {
-            boolean matched = false;
-            for (String token : noneMatch.split(",", -1)) {
-                String match = token.strip();
-                if (match.equals(etag) || ("W/" + match).equals(etag) || match.equals("W/" + etag)) {
-                    matched = true;
-                    break;
-                }
-            }
-            if (!matched) {
-                return false;
-            }
+        if (!noneMatch.isEmpty()
+                && !"*".equals(noneMatch)
+                && parseTokenList(noneMatch).stream().noneMatch(token -> etagMatches(token, etag))) {
+            return false;
         }
-        if (!isEmpty(modifiedSince)) {
+        if (!modifiedSince.isEmpty()) {
             Long modified = parseHttpDate(lastModified);
             Long since = parseHttpDate(modifiedSince);
             return modified != null && since != null && modified <= since;
@@ -211,8 +214,8 @@ final class SendFile {
 
     /** send {@code isRangeFresh}：没有 {@code If-Range} 或其与 ETag / Last-Modified 一致。 */
     private static boolean isRangeFresh(HttpServletRequest request, String etag, String lastModified) {
-        String ifRange = request.getHeader("If-Range");
-        if (isEmpty(ifRange)) {
+        String ifRange = header(request, "If-Range");
+        if (ifRange.isEmpty()) {
             return true;
         }
         if (ifRange.indexOf('"') >= 0) {
@@ -232,8 +235,8 @@ final class SendFile {
             if (dash < 0) {
                 return null;
             }
-            String startText = part.substring(0, dash).strip();
-            String endText = part.substring(dash + 1).strip();
+            String startText = Js.trim(part.substring(0, dash));
+            String endText = Js.trim(part.substring(dash + 1));
             Long start = parsePos(startText);
             Long end = parsePos(endText);
             if (startText.isEmpty()) {
@@ -281,6 +284,38 @@ final class SendFile {
         }
     }
 
+    /** send / fresh {@code parseTokenList}：以逗号分隔，去掉每项前导空格。 */
+    static List<String> parseTokenList(String value) {
+        List<String> tokens = new ArrayList<>();
+        int start = 0;
+        int end = 0;
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (c == ' ') {
+                if (start == end) {
+                    start = i + 1;
+                    end = i + 1;
+                }
+            } else if (c == ',') {
+                if (start != end) {
+                    tokens.add(value.substring(start, end));
+                }
+                start = i + 1;
+                end = i + 1;
+            } else {
+                end = i + 1;
+            }
+        }
+        if (start != end) {
+            tokens.add(value.substring(start, end));
+        }
+        return tokens;
+    }
+
+    private static boolean etagMatches(String token, String etag) {
+        return token.equals(etag) || ("W/" + token).equals(etag) || token.equals("W/" + etag);
+    }
+
     private static @Nullable Long parseHttpDate(String value) {
         try {
             return ZonedDateTime.parse(value.strip(), DateTimeFormatter.RFC_1123_DATE_TIME)
@@ -289,9 +324,5 @@ final class SendFile {
         } catch (DateTimeParseException e) {
             return null;
         }
-    }
-
-    private static boolean isEmpty(@Nullable String value) {
-        return value == null || value.isEmpty();
     }
 }

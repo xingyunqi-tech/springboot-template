@@ -11,4 +11,55 @@
 
     <artifactId>generator</artifactId>
     <description>模块代码生成器</description>
+
+    <properties>
+        <modulegen.skip>true</modulegen.skip>
+        <modulegen.step>scope</modulegen.step>
+        <modulegen.name/>
+        <modulegen.tag/>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>tech.xingyunqi.template</groupId>
+            <artifactId>template-contract</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>tools.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.freemarker</groupId>
+            <artifactId>freemarker</artifactId>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>modulegen</id>
+                        <goals>
+                            <goal>java</goal>
+                        </goals>
+                        <phase>process-classes</phase>
+                        <configuration>
+                            <skip>${modulegen.skip}</skip>
+                            <mainClass>tech.xingyunqi.template.tools.generator.ModuleGenerator</mainClass>
+                            <classpathScope>compile</classpathScope>
+                            <arguments>
+                                <argument>${root.dir}</argument>
+                                <argument>${modulegen.step}</argument>
+                                <argument>${modulegen.name}</argument>
+                                <argument>${modulegen.tag}</argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
 </project>

@@ -68,6 +68,25 @@ public interface UserMapper {
     @Nullable
     Row findByPhone(String phone);
 
+    @Select(SELECT + " and u.\"wechatOpenId\" = #{openId}")
+    @Nullable
+    Row findByWechatOpenId(String openId);
+
+    @Select(SELECT + " and u.\"alipayOpenId\" = #{openId}")
+    @Nullable
+    Row findByAlipayOpenId(String openId);
+
+    @Update("update \"user\" set phone = #{phone}, \"updatedAt\" = now()"
+            + " where id = #{id} and phone is null and \"deletedAt\" is null")
+    int bindPhoneIfEmpty(@Param("id") int id, @Param("phone") String phone);
+
+    @Update(
+            "<script>update \"user\" set \"wechatOpenId\" = #{openId}"
+                    + "<if test='unionId != null and unionId != \"\"'>, \"wechatUnionId\" = #{unionId}</if>"
+                    + ", \"updatedAt\" = now() where id = #{id} and \"wechatOpenId\" is null and \"deletedAt\" is null</script>")
+    int bindWechatIfEmpty(
+            @Param("id") int id, @Param("openId") String openId, @Param("unionId") @Nullable String unionId);
+
     @Select("<script>" + SELECT
             + "<if test='roleIds != null and !roleIds.isEmpty()'> and u.\"roleId\" in"
             + "<foreach collection='roleIds' item='r' open='(' separator=',' close=')'>#{r}</foreach></if>"

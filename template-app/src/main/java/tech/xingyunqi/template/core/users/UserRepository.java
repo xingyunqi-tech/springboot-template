@@ -30,6 +30,16 @@ public interface UserRepository {
 
     Optional<User> findByPhone(String phone);
 
+    Optional<User> findByWechatOpenId(String openId);
+
+    Optional<User> findByAlipayOpenId(String openId);
+
+    /** 未删除且手机号为空时写入；返回是否写入。 */
+    boolean bindPhoneIfEmpty(int id, String phone);
+
+    /** 未删除且 wechatOpenId 为空时写入 openId（unionId 非空时一并写入）；返回是否写入。 */
+    boolean bindWechatIfEmpty(int id, String openId, @Nullable String unionId);
+
     List<User> findMany(@Nullable List<Integer> roleIds, @Nullable List<SortItem> sort, long page, int limit);
 
     /** 键为 {@link #UPDATABLE} 中的字段，另可含 {@code photoId}、{@code roleId}、{@code statusId}。 */

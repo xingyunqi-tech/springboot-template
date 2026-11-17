@@ -44,7 +44,11 @@ class FilesParityIT {
     private @Nullable List<JsonNode> sendFiles;
 
     /** multipart 分段：{@code fileName} 为 null 时是文本字段。 */
-    record Part(String name, @Nullable String fileName, byte[] content, @Nullable String contentType) {}
+    record Part(
+            String name,
+            @Nullable String fileName,
+            byte[] content,
+            @Nullable String contentType) {}
 
     /** 一个上传用例：查询参数、请求头、请求体。 */
     record Upload(String label, String query, Map<String, String> headers, byte[] body) {
@@ -75,7 +79,9 @@ class FilesParityIT {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         for (Part part : parts) {
             StringBuilder head = new StringBuilder("--" + RANDOM_BOUNDARY + "\r\n");
-            head.append("Content-Disposition: form-data; name=\"").append(part.name()).append('"');
+            head.append("Content-Disposition: form-data; name=\"")
+                    .append(part.name())
+                    .append('"');
             if (part.fileName() != null && !part.fileName().isEmpty()) {
                 head.append("; filename=\"").append(part.fileName()).append('"');
             }
@@ -142,10 +148,7 @@ class FilesParityIT {
                 new Upload("no body", "", Map.of(), new byte[0]),
                 raw("urlencoded", "application/x-www-form-urlencoded", latin1("file=abc")),
                 files("over purpose limit", "", filePart("big.png", zeros(5 * 1024 * 1024 + 1), "image/png")),
-                files(
-                        "over content length",
-                        "",
-                        filePart("big.png", zeros(5 * 1024 * 1024 + 20000), "image/png")),
+                files("over content length", "", filePart("big.png", zeros(5 * 1024 * 1024 + 20000), "image/png")),
                 raw("garbage", multipart, latin1("garbage")),
                 raw("bad header", multipart, latin1("--xyz\r\nBad Header\r\n\r\nabc\r\n--xyz--\r\n")),
                 raw(
@@ -203,7 +206,7 @@ class FilesParityIT {
                 + new String(nestjs.body(), StandardCharsets.UTF_8);
         assertThat(java.status()).as(detail).isEqualTo(nestjs.status());
         assertThat(java.header("content-type")).as(detail).isEqualTo(nestjs.header("content-type"));
-        assertThat(normalizeFile(java.json(), null)).as(detail).isEqualTo(normalizeFile(nestjs.json(), null));
+        Parity.assertSameJson(normalizeFile(java.json(), null), normalizeFile(nestjs.json(), null), detail);
         return java.json();
     }
 
@@ -243,9 +246,12 @@ class FilesParityIT {
     }
 
     List<JsonNode> uploadPair(String purpose) {
-        Upload upload = files("png", "purpose=" + URLEncoder.encode(purpose, StandardCharsets.UTF_8),
+        Upload upload = files(
+                "png",
+                "purpose=" + URLEncoder.encode(purpose, StandardCharsets.UTF_8),
                 filePart("a.png", PNG, "image/png"));
-        Parity.Pair pair = authed("POST", withQuery(UPLOAD, upload.query()), user.tokens(), upload.headers(), upload.body());
+        Parity.Pair pair =
+                authed("POST", withQuery(UPLOAD, upload.query()), user.tokens(), upload.headers(), upload.body());
         return List.of(
                 pair.java().json().path("data").path("file"),
                 pair.nestjs().json().path("data").path("file"));
@@ -270,14 +276,16 @@ class FilesParityIT {
         assertThat(pair.java().status()).isEqualTo(pair.nestjs().status());
         assertThat(pair.java().body()).isEqualTo(pair.nestjs().body());
         for (String header : List.of("content-type", "cache-control", "accept-ranges", "content-length")) {
-            assertThat(pair.java().header(header)).as(header).isEqualTo(pair.nestjs().header(header));
+            assertThat(pair.java().header(header))
+                    .as(header)
+                    .isEqualTo(pair.nestjs().header(header));
         }
         assertThat(pair.java().header("etag")).startsWith("W/\"b-");
         assertThat(pair.nestjs().header("etag")).startsWith("W/\"b-");
     }
 
-    static final List<String> SEND_HEADERS = List.of(
-            "content-type", "content-length", "content-range", "accept-ranges", "cache-control");
+    static final List<String> SEND_HEADERS =
+            List.of("content-type", "content-length", "content-range", "accept-ranges", "cache-control");
 
     /** 公开文件下载的条件请求与范围请求；{@code {etag}}、{@code {lm}} 替换为各自上一次响应的 ETag 与 Last-Modified。 */
     static Stream<Arguments> sendCases() {
@@ -307,15 +315,31 @@ class FilesParityIT {
                 Arguments.of("GET", Map.of("Range", "bytes=0-4", "If-Range", "\"x\"")),
                 Arguments.of("GET", Map.of("Range", "bytes=0-4", "If-Range", "{lm}")),
                 Arguments.of("GET", Map.of("Range", "bytes=0-4", "If-Range", "Mon, 01 Jan 2001 00:00:00 GMT")),
-                Arguments.of("GET", Map.of("Range", "bytes=999999-", "If-Range", "\"x\"")));
+                Arguments.of("GET", Map.of("Range", "bytes=999999-", "If-Range", "\"x\"")),
+                Arguments.of("GET", Map.of("Range", "bytes=")),
+                Arguments.of("GET", Map.of("Range", "bytes=5-2")),
+                Arguments.of("GET", Map.of("Range", "bytes=-0")),
+                Arguments.of("GET", Map.of("Range", "bytes=3-")),
+                Arguments.of("GET", Map.of("Range", "bytes=5-100")),
+                Arguments.of("GET", Map.of("Range", "bytes=0-1,1-2")),
+                Arguments.of("GET", Map.of("If-None-Match", "*")));
+    }
+
+    /** 重复的请求头：Range / If-None-Match 按 Node 规则以逗号合并，If-Modified-Since 只取第一个。 */
+    static Stream<Arguments> repeatedHeaderCases() {
+        return Stream.of(
+                Arguments.of(List.of(Map.entry("Range", "bytes=0-1"), Map.entry("Range", "bytes=0-1"))),
+                Arguments.of(List.of(Map.entry("If-None-Match", "W/\"x\""), Map.entry("If-None-Match", "{etag}"))),
+                Arguments.of(List.of(
+                        Map.entry("If-Modified-Since", "Thu, 01 Jan 1970 00:00:00 GMT"),
+                        Map.entry("If-Modified-Since", "{lm}"))));
     }
 
     static Map<String, String> resolve(Map<String, String> headers, Parity.Result previous) {
         Map<String, String> resolved = new LinkedHashMap<>();
         headers.forEach((name, value) -> resolved.put(
                 name,
-                value.replace("{etag}", previous.header("etag"))
-                        .replace("{lm}", previous.header("last-modified"))));
+                value.replace("{etag}", previous.header("etag")).replace("{lm}", previous.header("last-modified"))));
         return resolved;
     }
 
@@ -338,12 +362,45 @@ class FilesParityIT {
                 resolve(headers, first.nestjs()),
                 new byte[0]);
 
+        assertSameSend(pair, first);
+    }
+
+    static List<Map.Entry<String, String>> resolve(List<Map.Entry<String, String>> headers, Parity.Result previous) {
+        return headers.stream()
+                .map(header -> Map.entry(
+                        header.getKey(),
+                        header.getValue()
+                                .replace("{etag}", previous.header("etag"))
+                                .replace("{lm}", previous.header("last-modified"))))
+                .toList();
+    }
+
+    @ParameterizedTest
+    @MethodSource("repeatedHeaderCases")
+    void publicFileRepeatedHeaders(List<Map.Entry<String, String>> headers) {
+        if (sendFiles == null) {
+            sendFiles = uploadPair("image");
+        }
+        List<JsonNode> files = sendFiles;
+        String javaPath = "/api/v1/files/" + storedName(files.get(0));
+        String nestjsPath = "/api/v1/files/" + storedName(files.get(1));
+        Parity.Pair first = parity.requestEach("GET", javaPath, Map.of(), nestjsPath, Map.of(), new byte[0]);
+
+        Parity.Pair pair = parity.requestEachHeaders(
+                "GET", javaPath, resolve(headers, first.java()), nestjsPath, resolve(headers, first.nestjs()));
+
+        assertSameSend(pair, first);
+    }
+
+    static void assertSameSend(Parity.Pair pair, Parity.Pair first) {
         String detail = pair.java().status() + " " + new String(pair.java().body(), StandardCharsets.UTF_8) + "\n"
                 + pair.nestjs().status() + " " + new String(pair.nestjs().body(), StandardCharsets.UTF_8);
         assertThat(pair.java().status()).as(detail).isEqualTo(pair.nestjs().status());
         assertThat(pair.java().body()).as(detail).isEqualTo(pair.nestjs().body());
         for (String header : SEND_HEADERS) {
-            assertThat(pair.java().header(header)).as(header).isEqualTo(pair.nestjs().header(header));
+            assertThat(pair.java().header(header))
+                    .as(header)
+                    .isEqualTo(pair.nestjs().header(header));
         }
         assertThat(pair.java().header("etag")).isEqualTo(first.java().header("etag"));
         assertThat(pair.nestjs().header("etag")).isEqualTo(first.nestjs().header("etag"));
@@ -393,7 +450,8 @@ class FilesParityIT {
                     new byte[0]);
             assertThat(pair.java().status()).isEqualTo(viewer.getValue());
             assertThat(pair.nestjs().status()).isEqualTo(viewer.getValue());
-            assertThat(pair.java().header("content-type")).isEqualTo(pair.nestjs().header("content-type"));
+            assertThat(pair.java().header("content-type"))
+                    .isEqualTo(pair.nestjs().header("content-type"));
             assertThat(pair.java().body()).isEqualTo(pair.nestjs().body());
         }
     }

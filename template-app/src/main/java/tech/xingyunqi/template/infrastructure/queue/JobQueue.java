@@ -10,12 +10,14 @@ import org.jspecify.annotations.Nullable;
  */
 public enum JobQueue {
     MAIL(Names.MAIL, 3, Duration.ofSeconds(1)),
-    ACCOUNT_CLEANUP(Names.ACCOUNT_CLEANUP, 5, Duration.ofSeconds(10));
+    ACCOUNT_CLEANUP(Names.ACCOUNT_CLEANUP, 5, Duration.ofSeconds(10)),
+    NOTIFICATION(Names.NOTIFICATION, 3, Duration.ofSeconds(1));
 
     /** 供 {@code @Job} 注解引用的队列名。 */
     public static final class Names {
         public static final String MAIL = "mail";
         public static final String ACCOUNT_CLEANUP = "account-cleanup";
+        public static final String NOTIFICATION = "notification";
 
         private Names() {}
     }

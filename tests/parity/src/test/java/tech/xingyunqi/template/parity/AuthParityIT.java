@@ -88,7 +88,7 @@ class AuthParityIT {
                 + new String(nestjs.body(), StandardCharsets.UTF_8);
         assertThat(java.status()).as(detail).isEqualTo(nestjs.status());
         assertThat(java.header("content-type")).isEqualTo(nestjs.header("content-type"));
-        assertThat(normalize(java.json(), null)).as(detail).isEqualTo(normalize(nestjs.json(), null));
+        Parity.assertSameJson(normalize(java.json(), null), normalize(nestjs.json(), null), detail);
         return java.json();
     }
 

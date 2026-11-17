@@ -77,12 +77,20 @@ class ThrottleGuardTest {
             }
         }
         assertThat(declared)
-                .containsExactlyInAnyOrderEntriesOf(Map.of(
-                        "loginWithEmail", "5/60000",
-                        "forgotPassword", "3/300000",
-                        "resetPassword", "5/300000",
-                        "updateCurrentUser", "10/60000",
-                        "changePassword", "3/60000"));
+                .containsExactlyInAnyOrderEntriesOf(Map.ofEntries(
+                        Map.entry("loginWithEmail", "5/60000"),
+                        Map.entry("forgotPassword", "3/300000"),
+                        Map.entry("resetPassword", "5/300000"),
+                        Map.entry("updateCurrentUser", "10/60000"),
+                        Map.entry("changePassword", "3/60000"),
+                        Map.entry("sendSmsCode", "3/60000"),
+                        Map.entry("loginWithPhone", "5/60000"),
+                        Map.entry("loginWithSms", "5/60000"),
+                        Map.entry("registerWithPhone", "3/60000"),
+                        Map.entry("resetPasswordByPhone", "5/300000"),
+                        Map.entry("loginWithWechat", "10/60000"),
+                        Map.entry("loginWithWechatPhone", "10/60000"),
+                        Map.entry("loginWithAlipay", "10/60000")));
     }
 
     @Test

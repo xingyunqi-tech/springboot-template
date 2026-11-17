@@ -66,6 +66,32 @@ public class UsersService {
         return phone == null || phone.isEmpty() ? Optional.empty() : repository.findByPhone(phone);
     }
 
+    public Optional<User> findByWechatOpenId(@Nullable String openId) {
+        return openId == null || openId.isEmpty() ? Optional.empty() : repository.findByWechatOpenId(openId);
+    }
+
+    public Optional<User> findByAlipayOpenId(@Nullable String openId) {
+        return openId == null || openId.isEmpty() ? Optional.empty() : repository.findByAlipayOpenId(openId);
+    }
+
+    public boolean bindPhoneIfEmpty(int userId, String phone) {
+        return repository.bindPhoneIfEmpty(userId, phone);
+    }
+
+    public boolean bindWechatIfEmpty(int userId, String openId, @Nullable String unionId) {
+        return repository.bindWechatIfEmpty(userId, openId, unionId);
+    }
+
+    /** 无条件写入新密码，写入成功时删除该用户全部会话；用户不存在时不做任何修改。哈希在事务外完成。 */
+    public void setPassword(int userId, String md5Password) {
+        String hash = passwords.hash(md5Password);
+        transactions.run(() -> {
+            if (repository.update(userId, Map.<String, @Nullable Object>of("password", hash)) > 0) {
+                sessions.deleteByUser(userId, null);
+            }
+        });
+    }
+
     public List<User> findMany(@Nullable List<Integer> roleIds, @Nullable List<SortItem> sort, long page, int limit) {
         return repository.findMany(roleIds, sort, page, limit);
     }

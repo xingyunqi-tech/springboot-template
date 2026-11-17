@@ -43,6 +43,26 @@ class UserRepositoryImpl implements UserRepository {
     }
 
     @Override
+    public Optional<User> findByWechatOpenId(String openId) {
+        return Optional.ofNullable(mapper.findByWechatOpenId(openId)).map(UserRepositoryImpl::toDomain);
+    }
+
+    @Override
+    public Optional<User> findByAlipayOpenId(String openId) {
+        return Optional.ofNullable(mapper.findByAlipayOpenId(openId)).map(UserRepositoryImpl::toDomain);
+    }
+
+    @Override
+    public boolean bindPhoneIfEmpty(int id, String phone) {
+        return mapper.bindPhoneIfEmpty(id, phone) > 0;
+    }
+
+    @Override
+    public boolean bindWechatIfEmpty(int id, String openId, @Nullable String unionId) {
+        return mapper.bindWechatIfEmpty(id, openId, unionId) > 0;
+    }
+
+    @Override
     public List<User> findMany(@Nullable List<Integer> roleIds, @Nullable List<SortItem> sort, long page, int limit) {
         List<UserMapper.Order> orders = new ArrayList<>();
         boolean orderedById = false;

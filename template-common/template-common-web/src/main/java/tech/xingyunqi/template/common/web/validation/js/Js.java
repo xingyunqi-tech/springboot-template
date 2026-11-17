@@ -9,11 +9,12 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.jspecify.annotations.Nullable;
 import tech.xingyunqi.template.common.json.JsNumbers;
+import tech.xingyunqi.template.common.json.JsStrings;
 
 /** JavaScript 抽象操作：类型转换、相等、字符串化与字面量替换。 */
 public final class Js {
 
-    public static final String WHITESPACE = "\t\n\u000B\f\r         " + "         　﻿";
+    public static final String WHITESPACE = JsStrings.WHITESPACE;
 
     private static final Pattern DECIMAL = Pattern.compile("[+-]?(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][+-]?\\d+)?");
     private static final Pattern RADIX = Pattern.compile("0([xXoObB])([0-9a-fA-F]+)");
@@ -21,19 +22,11 @@ public final class Js {
     private Js() {}
 
     public static boolean isWhitespace(char c) {
-        return WHITESPACE.indexOf(c) >= 0;
+        return JsStrings.isWhitespace(c);
     }
 
     public static String trim(String value) {
-        int start = 0;
-        int end = value.length();
-        while (start < end && isWhitespace(value.charAt(start))) {
-            start++;
-        }
-        while (end > start && isWhitespace(value.charAt(end - 1))) {
-            end--;
-        }
-        return value.substring(start, end);
+        return JsStrings.trim(value);
     }
 
     public static boolean isNullish(JsValue value) {

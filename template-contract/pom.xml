@@ -101,6 +101,10 @@
                             <schemaMappings>
                                 <schemaMapping>User=tech.xingyunqi.template.views.UserView</schemaMapping>
                                 <schemaMapping>LoginResponseDto=tech.xingyunqi.template.views.LoginResponseView</schemaMapping>
+                                <schemaMapping>Notification=tech.xingyunqi.template.views.NotificationView</schemaMapping>
+                                <schemaMapping>Feedback=tech.xingyunqi.template.views.FeedbackView</schemaMapping>
+                                <schemaMapping>CheckFavoriteResponseDto=tech.xingyunqi.template.views.CheckFavoriteResponseView</schemaMapping>
+                                <schemaMapping>toggleFavorite_200_response=tech.xingyunqi.template.views.ToggleFavoriteResponseView</schemaMapping>
                             </schemaMappings>
                             <configOptions>
                                 <interfaceOnly>true</interfaceOnly>

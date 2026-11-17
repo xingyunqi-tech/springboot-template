@@ -286,6 +286,35 @@ class FilesIT {
     }
 
     @Test
+    @DisplayName("公开文件的重复请求头：Range、If-None-Match 合并，If-Modified-Since 取第一个")
+    void publicDownloadRepeatedHeaders() throws Exception {
+        JsonNode file = uploaded("image", john);
+        String url = file.path("path").asString().substring("http://backend.test".length());
+        MockHttpServletResponse first =
+                mvc.perform(MockMvcRequestBuilders.get(url)).andReturn().getResponse();
+
+        MockHttpServletResponse ranges = mvc.perform(
+                        MockMvcRequestBuilders.get(url).header("Range", "bytes=0-1", "bytes=0-1"))
+                .andReturn()
+                .getResponse();
+        assertThat(ranges.getStatus()).isEqualTo(200);
+        assertThat(ranges.getContentAsByteArray()).isEqualTo(PNG);
+
+        MockHttpServletResponse noneMatch = mvc.perform(
+                        MockMvcRequestBuilders.get(url).header("If-None-Match", "W/\"x\"", first.getHeader("ETag")))
+                .andReturn()
+                .getResponse();
+        assertThat(noneMatch.getStatus()).isEqualTo(304);
+
+        MockHttpServletResponse modifiedSince = mvc.perform(MockMvcRequestBuilders.get(url)
+                        .header("If-Modified-Since", "Thu, 01 Jan 1970 00:00:00 GMT", first.getHeader("Last-Modified")))
+                .andReturn()
+                .getResponse();
+        assertThat(modifiedSince.getStatus()).isEqualTo(200);
+        assertThat(modifiedSince.getContentAsByteArray()).isEqualTo(PNG);
+    }
+
+    @Test
     @DisplayName("不存在、私有文件与 GET files/upload 都是 404 fileNotFound")
     void unknownOrPrivateIsNotFound() throws Exception {
         uploaded("private-image", john);

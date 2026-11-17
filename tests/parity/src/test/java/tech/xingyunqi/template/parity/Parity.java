@@ -53,6 +53,11 @@ final class Parity {
 
     record Pair(Result java, Result nestjs) {}
 
+    /** 结构、取值与对象键顺序都一致。 */
+    static void assertSameJson(JsonNode java, JsonNode nestjs, String detail) {
+        assertThat(JSON.writeValueAsString(java)).as(detail).isEqualTo(JSON.writeValueAsString(nestjs));
+    }
+
     private final Map<String, String> targets;
 
     private Parity(Map<String, String> targets) {
@@ -95,6 +100,32 @@ final class Parity {
         return checked(
                 send(targets.get("java"), method, javaPath, javaHeaders, body),
                 send(targets.get("nestjs"), method, nestjsPath, nestjsHeaders, body),
+                false);
+    }
+
+    /** 两侧分别使用各自的请求体（如各自的短信验证码）。 */
+    Pair requestEachBody(String method, String path, Map<String, String> headers, byte[] javaBody, byte[] nestjsBody) {
+        return checked(
+                send(targets.get("java"), method, path, headers, javaBody),
+                send(targets.get("nestjs"), method, path, headers, nestjsBody),
+                false);
+    }
+
+    /** 只发往一侧（{@code java} 或 {@code nestjs}），不做成对检查。 */
+    Result sendTo(String side, String method, String path, Map<String, String> headers, byte[] body) {
+        return send(targets.get(side), method, path, headers, body);
+    }
+
+    /** 两侧分别使用各自的路径；请求头按顺序逐条发送，同名请求头可重复。 */
+    Pair requestEachHeaders(
+            String method,
+            String javaPath,
+            List<Map.Entry<String, String>> javaHeaders,
+            String nestjsPath,
+            List<Map.Entry<String, String>> nestjsHeaders) {
+        return checked(
+                send(targets.get("java"), method, javaPath, javaHeaders, new byte[0]),
+                send(targets.get("nestjs"), method, nestjsPath, nestjsHeaders, new byte[0]),
                 false);
     }
 
@@ -149,6 +180,11 @@ final class Parity {
     }
 
     private static Result send(String base, String method, String path, Map<String, String> headers, byte[] body) {
+        return send(base, method, path, List.copyOf(headers.entrySet()), body);
+    }
+
+    private static Result send(
+            String base, String method, String path, List<Map.Entry<String, String>> headers, byte[] body) {
         HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(base + path))
                 .timeout(Duration.ofSeconds(10))
                 .method(
@@ -156,8 +192,8 @@ final class Parity {
                         body.length == 0
                                 ? HttpRequest.BodyPublishers.noBody()
                                 : HttpRequest.BodyPublishers.ofByteArray(body));
-        headers.forEach(builder::header);
-        if (headers.keySet().stream().noneMatch("X-Forwarded-For"::equalsIgnoreCase)) {
+        headers.forEach(header -> builder.header(header.getKey(), header.getValue()));
+        if (headers.stream().map(Map.Entry::getKey).noneMatch("X-Forwarded-For"::equalsIgnoreCase)) {
             builder.header("X-Forwarded-For", nextClientIp());
         }
         try {

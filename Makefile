@@ -50,6 +50,13 @@ test-e2e: ## E2E 测试（APP_URL，默认 http://localhost:3000）
 test-parity: ## parity 测试（PARITY_TARGETS，默认 java=3000、nestjs=NESTJS_PORT；本服务须与 nestjs 同 APP_NAME 启动，并设 THROTTLE_ENABLED=true、TRUST_PROXY=1）
 	$(MVNW) -Pparity -pl tests/parity -am verify -DPARITY_TARGETS=$(PARITY_TARGETS)
 
+.PHONY: module
+module: ## 按 OpenAPI 标签生成模块骨架（NAME=orders TAG=Orders）：写入 scope.yaml，生成 controller 桩（501）、service、repository
+	@test -n "$(NAME)" && test -n "$(TAG)" || { echo "usage: make module NAME=orders TAG=Orders" >&2; exit 2; }
+	$(MVNW) -q -pl tools/generator -am process-classes -Dmodulegen.skip=false -Dmodulegen.step=scope '-Dmodulegen.name=$(NAME)' '-Dmodulegen.tag=$(TAG)'
+	$(MVNW) -q -pl tools/generator -am process-classes -Dmodulegen.skip=false -Dmodulegen.step=scaffold '-Dmodulegen.name=$(NAME)' '-Dmodulegen.tag=$(TAG)'
+	$(MVNW) -q -pl template-app spotless:apply
+
 .PHONY: infra
 infra: ## 启动本地 Postgres / Redis / Mailpit（docker compose）
 	docker compose -f docker/infra.compose.yaml $(COMPOSE_ENV) up -d --wait

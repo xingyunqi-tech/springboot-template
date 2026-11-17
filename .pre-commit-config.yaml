@@ -11,7 +11,7 @@ repos:
       - id: check-json
       - id: check-xml
       - id: end-of-file-fixer
-        exclude: ^(openapi/|db/|tests/contract/fixtures/|tests/fixtures/nestjs_mail/|template-app/src/main/resources/mail-templates/|scripts/(openapi-sync\.sh|schema_snapshot\.py|gen_validation_cases\.py|gen_nest_handlers\.py|nestjs/))
+        exclude: ^(openapi/|db/|tests/contract/fixtures/|tests/fixtures/nestjs_mail/|template-app/src/main/resources/mail-templates/|template-common/template-common-mail/src/test/resources/mail-templates/probe\.hbs$|scripts/(openapi-sync\.sh|schema_snapshot\.py|gen_validation_cases\.py|gen_nest_handlers\.py|nestjs/))
       - id: trailing-whitespace
         exclude: ^(openapi/|db/|tests/contract/fixtures/|tests/fixtures/nestjs_mail/|template-app/src/main/resources/mail-templates/|scripts/(openapi-sync\.sh|schema_snapshot\.py|gen_validation_cases\.py|gen_nest_handlers\.py|nestjs/)|docs/contract\.md)
 

@@ -124,6 +124,59 @@ class SendFileTest {
                         HttpStatusException.class, e -> assertThat(e.status()).isEqualTo(412));
     }
 
+    MockHttpServletResponse sendRepeated(String name, String... values) throws IOException {
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/v1/files/a.png");
+        for (String value : values) {
+            request.addHeader(name, value);
+        }
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        SendFile.send(request, response, file());
+        return response;
+    }
+
+    @Test
+    @DisplayName("范围边界：空范围与语法错误完整输出，end 超出截到末尾，重叠范围合并为单个 206，无可满足范围 416")
+    void rangeEdges() throws IOException {
+        assertThat(send(Map.of("Range", "bytes=")).getStatus()).isEqualTo(200);
+        assertThat(send(Map.of("Range", "bytes=3-")).getHeader("Content-Range")).isEqualTo("bytes 3-10/11");
+        assertThat(send(Map.of("Range", "bytes=5-100")).getHeader("Content-Range"))
+                .isEqualTo("bytes 5-10/11");
+        MockHttpServletResponse overlapping = send(Map.of("Range", "bytes=0-1,1-2"));
+        assertThat(overlapping.getStatus()).isEqualTo(206);
+        assertThat(overlapping.getHeader("Content-Range")).isEqualTo("bytes 0-2/11");
+        for (String range : new String[] {"bytes=5-2", "bytes=-0"}) {
+            assertThatThrownBy(() -> send(Map.of("Range", range)))
+                    .isInstanceOfSatisfying(HttpStatusException.class, e -> {
+                        assertThat(e.status()).isEqualTo(416);
+                        assertThat(e.headers()).containsEntry("Content-Range", "bytes */11");
+                    });
+        }
+        assertThat(send(Map.of("If-None-Match", "*")).getStatus()).isEqualTo(304);
+    }
+
+    @Test
+    @DisplayName("重复请求头：Range、If-None-Match 等以逗号合并，If-Modified-Since 只取第一个")
+    void repeatedHeaders() throws IOException {
+        String etag = send(Map.of()).getHeader("ETag");
+
+        MockHttpServletResponse ranges = sendRepeated("Range", "bytes=0-1", "bytes=0-1");
+        assertThat(ranges.getStatus()).isEqualTo(200);
+        assertThat(ranges.getContentAsString()).isEqualTo("PNGDATA1234");
+
+        assertThat(sendRepeated("If-None-Match", "W/\"x\"", etag).getStatus()).isEqualTo(304);
+        assertThat(sendRepeated("If-Modified-Since", "Thu, 01 Jan 1970 00:00:00 GMT", "Sat, 14 Nov 2026 14:50:12 GMT")
+                        .getStatus())
+                .isEqualTo(200);
+        assertThat(sendRepeated("If-Match", "\"x\"", etag).getStatus()).isEqualTo(200);
+    }
+
+    @Test
+    @DisplayName("parseTokenList：按逗号切分并去掉每项前导空格，空项忽略")
+    void tokenList() {
+        assertThat(SendFile.parseTokenList(" a, b ,,c d,")).containsExactly("a", "b", "c d");
+        assertThat(SendFile.parseTokenList("")).isEmpty();
+    }
+
     @Test
     @DisplayName("磁盘文件不存在时 404 Not Found")
     void missingFile() {
